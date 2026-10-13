@@ -1,0 +1,18 @@
+[package]
+name = "switchhead-git"
+description = "switchhead's git engine: gix for reads, the git CLI for writes, commit-graph layout"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+gix.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
