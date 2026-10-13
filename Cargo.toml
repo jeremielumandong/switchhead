@@ -1,0 +1,73 @@
+[workspace]
+resolver = "3"
+members = ["crates/git", "crates/app"]
+default-members = ["crates/git", "crates/app"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/jeremielumandong/switchhead"
+rust-version = "1.97"
+
+[workspace.dependencies]
+# internal
+switchhead-git = { path = "crates/git" }
+
+# UI: the same facade and versions as Switchyard (gpui-pre =0.3.8 + gpui-component 0.7.1,
+# kept in lockstep). See docs/DECISIONS.md.
+gpui-kit = { version = "=0.7.1" }
+
+# Git reads (log, refs, status, diff). Writes go through the system `git` binary.
+gix = { version = "0.89", default-features = false, features = [
+    "max-performance-safe",
+    "sha1",
+    "basic",
+    "status",
+    "mailmap",
+    "parallel",
+] }
+
+# serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# errors / logs
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# platform
+directories = "6"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+
+# testing
+tempfile = "3"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+
+[profile.dev]
+# Keep debug builds snappy for the UI: optimize dependencies, not our crates.
+opt-level = 0
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+# gpui-fast (Retained Mode rendering) in place of GPUI Kit's upstream `gpui-pre` snapshots,
+# pinned to the same rev as Switchyard. See docs/DECISIONS.md.
+[patch.crates-io]
+gpui-pre = { git = "https://github.com/longbridge/gpui-fast", rev = "598306fcbf77bff0f764b5a178a447344e72e132" }
+gpui-pre-platform = { git = "https://github.com/longbridge/gpui-fast", rev = "598306fcbf77bff0f764b5a178a447344e72e132" }
+gpui-pre-macros = { git = "https://github.com/longbridge/gpui-fast", rev = "598306fcbf77bff0f764b5a178a447344e72e132" }
+gpui-pre-sum-tree = { git = "https://github.com/longbridge/gpui-fast", rev = "598306fcbf77bff0f764b5a178a447344e72e132" }
+gpui-pre-web = { git = "https://github.com/longbridge/gpui-fast", rev = "598306fcbf77bff0f764b5a178a447344e72e132" }
