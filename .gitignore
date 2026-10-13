@@ -1,0 +1,6 @@
+/target
+**/*.rs.bk
+*.pending-snap
+.DS_Store
+/dist
+.claude*
