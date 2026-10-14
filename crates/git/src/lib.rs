@@ -19,6 +19,7 @@ pub mod graph;
 pub mod log;
 pub mod ops;
 pub mod rebase;
+pub mod reflog;
 pub mod refs;
 pub mod repo;
 pub mod search;

@@ -230,8 +230,10 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   graph. Other rows dim, "3 of 17" counts, Enter / Shift+Enter or the arrows step
   through the matches, Esc closes; typing searches again after a 250 ms pause and a
   scope change re-runs it (`repo_view/search.rs`).*
-- [ ] M4-10 Blame view and file history (follow renames), jump to commit.
-- [ ] M4-11 Reflog view and restore.
+- [x] M4-10 Blame view and file history (follow renames), jump to commit.
+  File History / Blame from the commit file list's and Local Changes' menus open a view in place of the graph: history lists versions (renames shown) beside the commit's details; blame streams in with an age bar, Blame Before This Commit, Blame This Version, and Show Commit (or double-click) selects it in the graph.
+- [x] M4-11 Reflog view and restore.
+  "Show Reflog" (palette, branch menu) opens HEAD's or a branch's reflog in place of the graph (`git::reflog`, read with gix; tested), with the entry's commit beside it. Reset Here (HEAD / current branch, asks), Move Branch Here (`branch -f`, asks), New Branch Here, Check Out and Show in Graph; the list reloads when refs change.
 - [ ] M4-12 Repository file tree at any commit; open / save file at revision.
 - [ ] M4-13 Undo: before a hard reset, discard or clean, snapshot the work tree and index
       (`git stash create`, kept under `refs/switchhead/undo/*`); ref moves undo through the
@@ -278,6 +280,7 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 
 ## Follow-ups
 
+- Blame: no syntax colors yet, and file history (`log --follow`) is read in one go rather than streamed or cancellable.
 - Search: a pickaxe search that prints nothing for a long time is only stopped at its next match (`run_lines` checks cancel between lines); kill it from a watcher like `run_streaming`.
 
 - Stash details: also list the untracked files a stash holds (its third parent).

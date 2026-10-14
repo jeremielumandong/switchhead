@@ -34,7 +34,7 @@ use crate::actions;
 use crate::activity::{Activity, Outcome};
 use crate::appearance::{rpx, ts};
 use crate::changes_view::{ChangesEvent, ChangesView};
-use crate::commit_view::{CommitView, Navigate};
+use crate::commit_view::{CommitView, Navigate, OpenFile};
 use crate::graph_paint;
 use crate::theme::{MONO, Palette, palette};
 use crate::ui;
@@ -42,8 +42,10 @@ use crate::ui;
 mod activity_panel;
 mod branch_ops;
 mod commit_menu;
+mod file_history;
 mod form;
 mod rebase;
+mod reflog;
 mod remote_ops;
 mod search;
 mod section_menu;
@@ -152,6 +154,12 @@ pub struct RepoView {
     activity_collapsed: HashSet<u64>,
     /// The commit search bar above the graph.
     search: Option<search::Search>,
+    /// A file's history and blame or a reflog, shown in place of the graph or Local Changes.
+    overlay: Option<(gpui_kit::AnyView, Subscription)>,
+    /// The reflog view, when the overlay is one (reloaded when refs change).
+    reflog: Option<gpui_kit::WeakEntity<crate::reflog_view::ReflogView>>,
+    /// Focus the current mode at the next render (the file view closed).
+    refocus: bool,
     /// The interactive rebase editor, shown in place of the graph.
     rebase: Option<(Entity<crate::rebase_editor::RebaseEditor>, Subscription)>,
     details: Entity<CommitView>,
@@ -166,7 +174,7 @@ pub struct RepoView {
     checking: bool,
     _walk: Option<Task<()>>,
     _watch: Task<()>,
-    _details: Subscription,
+    _details: [Subscription; 2],
     _changes: [Subscription; 2],
     _op: Option<Task<()>>,
 }
@@ -175,6 +183,9 @@ impl RepoView {
     /// A tab for `repo`; starts loading at once.
     pub fn new(repo: Repo, cx: &mut Context<Self>) -> Self {
         let details = cx.new(|cx| CommitView::new(repo.clone(), cx));
+        let open_file = cx.subscribe(&details, |this, _, ev: &OpenFile, cx| {
+            this.open_file_view(ev.path.clone(), Some(ev.rev), ev.blame, cx);
+        });
         let sub = cx.subscribe(&details, |this, _, Navigate(id), cx| {
             match this.log.row_of(id) {
                 Some(row) => this.select(row, cx),
@@ -188,6 +199,9 @@ impl RepoView {
             // A commit moved a branch: read refs now rather than at the next poll.
             cx.subscribe(&changes, |this, _, ev: &ChangesEvent, cx| match ev {
                 ChangesEvent::Committed => this.check_changes(cx),
+                ChangesEvent::OpenFile { path, blame } => {
+                    this.open_file_view(path.clone(), None, *blame, cx)
+                }
             }),
         ];
         let mut v = Self {
@@ -220,6 +234,9 @@ impl RepoView {
             activity_open: false,
             activity_collapsed: HashSet::new(),
             rebase: None,
+            overlay: None,
+            reflog: None,
+            refocus: false,
             search: None,
             details,
             details_split: cx.new(|_| ResizableState::default()),
@@ -231,7 +248,7 @@ impl RepoView {
             checking: false,
             _watch: Self::watch(cx),
             _walk: None,
-            _details: sub,
+            _details: [sub, open_file],
             _op: None,
         };
         v.reload(cx);
@@ -297,6 +314,8 @@ impl RepoView {
     /// Show the graph or Local Changes, and focus it.
     pub fn set_mode(&mut self, mode: Mode, window: &mut Window, cx: &mut Context<Self>) {
         self.mode = mode;
+        self.overlay = None;
+        self.reflog = None;
         match mode {
             Mode::Commits => window.focus(&self.focus, cx),
             Mode::Changes => {
@@ -380,6 +399,9 @@ impl RepoView {
                 }
                 self.decorations = refs.decorations();
                 self.refs = *refs;
+                if let Some(r) = self.reflog.as_ref().and_then(|r| r.upgrade()) {
+                    r.update(cx, |r, cx| r.reload(cx));
+                }
                 self.rebuild_side();
                 self.sync_details(true, cx);
             }
@@ -952,6 +974,10 @@ impl Render for RepoView {
         let p = palette(cx);
         let rem = window.rem_size();
         self.ensure_side_filter(window, cx);
+        if std::mem::take(&mut self.refocus) {
+            let mode = self.mode;
+            self.set_mode(mode, window, cx);
+        }
         div()
             .id("repo")
             .key_context("Graph")
@@ -1016,6 +1042,9 @@ impl Render for RepoView {
             .on_action(cx.listener(|this, _: &actions::FindCommits, window, cx| {
                 this.open_search(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &actions::ShowReflog, window, cx| {
+                this.open_reflog("HEAD".into(), window, cx)
+            }))
             .on_action(cx.listener(|this, _: &actions::StageAll, _, cx| {
                 this.changes.update(cx, |c, cx| c.stage_all(cx))
             }))
@@ -1050,7 +1079,10 @@ impl RepoView {
             .flex_1()
             .min_h_0()
             .flex()
-            .when(self.mode == Mode::Changes, |d| {
+            .when_some(self.overlay.as_ref(), |d, (view, _)| {
+                d.child(div().flex_1().min_w_0().h_full().child(view.clone()))
+            })
+            .when(self.overlay.is_none() && self.mode == Mode::Changes, |d| {
                 d.child(
                     div()
                         .flex_1()
@@ -1060,28 +1092,33 @@ impl RepoView {
                 )
             })
             .when_some(
-                self.rebase.as_ref().filter(|_| self.mode == Mode::Commits),
+                self.rebase
+                    .as_ref()
+                    .filter(|_| self.mode == Mode::Commits && self.overlay.is_none()),
                 |d, (editor, _)| d.child(div().flex_1().min_w_0().h_full().child(editor.clone())),
             )
-            .when(self.mode == Mode::Commits && self.rebase.is_none(), |d| {
-                d.child(
-                    div().flex_1().min_w_0().h_full().child(
-                        v_resizable("graph-details")
-                            .with_state(&self.details_split)
-                            .child(
-                                resizable_panel()
-                                    .size_range(rem * (120. / 13.)..gpui_kit::Pixels::MAX)
-                                    .child(self.render_graph(p, cx)),
-                            )
-                            .child(
-                                resizable_panel()
-                                    .size(rem * (400. / 13.))
-                                    .size_range(rem * (140. / 13.)..gpui_kit::Pixels::MAX)
-                                    .child(self.details.clone()),
-                            ),
-                    ),
-                )
-            })
+            .when(
+                self.mode == Mode::Commits && self.rebase.is_none() && self.overlay.is_none(),
+                |d| {
+                    d.child(
+                        div().flex_1().min_w_0().h_full().child(
+                            v_resizable("graph-details")
+                                .with_state(&self.details_split)
+                                .child(
+                                    resizable_panel()
+                                        .size_range(rem * (120. / 13.)..gpui_kit::Pixels::MAX)
+                                        .child(self.render_graph(p, cx)),
+                                )
+                                .child(
+                                    resizable_panel()
+                                        .size(rem * (400. / 13.))
+                                        .size_range(rem * (140. / 13.)..gpui_kit::Pixels::MAX)
+                                        .child(self.details.clone()),
+                                ),
+                        ),
+                    )
+                },
+            )
             .into_any_element()
     }
 
@@ -1253,7 +1290,7 @@ fn short_ref(r: &str) -> &str {
 }
 
 /// A commit date for the list: "14:02" today, "Oct 9 14:02" this year, "Oct 9 2023" before.
-fn fmt_date(secs: i64, now: i64) -> SharedString {
+pub(crate) fn fmt_date(secs: i64, now: i64) -> SharedString {
     use chrono::{Datelike as _, Local, TimeZone as _};
     let (Some(t), Some(n)) = (
         Local.timestamp_opt(secs, 0).single(),

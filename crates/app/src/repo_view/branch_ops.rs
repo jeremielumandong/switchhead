@@ -409,6 +409,10 @@ pub(super) fn build_ref_menu(
             menu = menu.item(PopupMenuItem::new("Rename…").on_click(act(Box::new(
                 move |v, window, cx| v.rename_branch_dialog(b1.clone(), window, cx),
             ))));
+            let b4 = b.clone();
+            menu = menu.item(PopupMenuItem::new("Show Reflog").on_click(act(Box::new(
+                move |v, window, cx| v.open_reflog(b4.clone(), window, cx),
+            ))));
             let b2 = b.clone();
             menu = menu.item(
                 PopupMenuItem::new("Delete…")

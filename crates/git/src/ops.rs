@@ -366,6 +366,12 @@ impl Repo {
         Ok(())
     }
 
+    /// Point branch `name` at `rev` (`git branch -f`; git refuses the checked-out branch).
+    pub fn move_branch(&self, name: &str, rev: &str) -> Result<()> {
+        self.run_git(vec![os("branch"), os("-f"), os(name), os(rev)])?;
+        Ok(())
+    }
+
     /// Rename a local branch.
     pub fn rename_branch(&self, old: &str, new: &str) -> Result<()> {
         self.run_git(vec![os("branch"), os("-m"), os(old), os(new)])?;

@@ -12,7 +12,7 @@ use gpui_kit::component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
 use gpui_kit::{App, ClipboardItem, Context, IntoElement, WeakEntity, Window};
 use switchhead_git::status::{Change, EntryKind, HiddenFlag};
 
-use super::ChangesView;
+use super::{ChangesEvent, ChangesView};
 use crate::changes_model::{Side, ignore_patterns};
 
 /// What the selection allows, worked out when the menu opens.
@@ -336,6 +336,21 @@ pub(super) fn build(
                 .item(hide("Assume Unchanged", HiddenFlag::AssumeUnchanged))
                 .item(hide("Skip Worktree", HiddenFlag::SkipWorktree));
         }
+    }
+    if let [path] = t.paths.as_slice()
+        && t.untracked.is_empty()
+    {
+        let open = |blame: bool| {
+            let (view, path) = (view.clone(), path.clone());
+            move |_: &gpui_kit::ClickEvent, _: &mut Window, cx: &mut App| {
+                let path = path.clone();
+                let _ = view.update(cx, |_, cx| cx.emit(ChangesEvent::OpenFile { path, blame }));
+            }
+        };
+        menu = menu
+            .separator()
+            .item(PopupMenuItem::new("File History").on_click(open(false)))
+            .item(PopupMenuItem::new("Blame").on_click(open(true)));
     }
     let text = t
         .paths

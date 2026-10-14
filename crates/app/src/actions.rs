@@ -54,6 +54,7 @@ actions!(
         PushAllTags,
         AddRemote,
         FindCommits,
+        ShowReflog,
         ToggleActivity,
     ]
 );
@@ -95,6 +96,7 @@ pub fn commands() -> Vec<Command> {
         c("Refresh", "Repository", Refresh, true),
         c("Jump to HEAD", "History", JumpToHead, true),
         c("Find Commits…", "History", FindCommits, true),
+        c("Show Reflog", "History", ShowReflog, true),
         c("Show All Branches", "History", ShowAllBranches, true),
         c(
             "Show Current Branch Only",

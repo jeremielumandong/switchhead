@@ -98,6 +98,13 @@ pub struct ChangesView {
 pub enum ChangesEvent {
     /// A commit was made: the history changed.
     Committed,
+    /// Show a file's history or (work tree) blame.
+    OpenFile {
+        /// The file.
+        path: std::path::PathBuf,
+        /// Blame (else history).
+        blame: bool,
+    },
 }
 
 impl gpui_kit::EventEmitter<ChangesEvent> for ChangesView {}
