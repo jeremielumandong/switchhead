@@ -9,13 +9,16 @@
 //!
 //! Nothing here touches a UI: callers run these functions off the UI thread.
 
-// Planned modules (PLAN.md, M1): diff, conflict, rebase, blame.
+// Planned modules (PLAN.md, M1): rebase, blame, operations.
 pub mod cli;
+pub mod conflict;
+pub mod diff;
 pub mod discover;
 pub mod graph;
 pub mod log;
 pub mod refs;
 pub mod repo;
+pub mod stage;
 pub mod status;
 
 use std::fmt::Display;
@@ -46,6 +49,9 @@ pub enum Error {
     /// The path is not inside a git repository.
     #[error("not a git repository: {}", .0.display())]
     NotARepo(PathBuf),
+    /// The request cannot be done this way (the message says why).
+    #[error("{0}")]
+    Unsupported(String),
     /// Output from git that could not be read.
     #[error("unexpected output from git: {0}")]
     Parse(String),
@@ -66,6 +72,13 @@ impl<T, E: Display> GixExt<T> for std::result::Result<T, E> {
     fn gix(self) -> Result<T> {
         self.map_err(|e| Error::Gix(e.to_string()))
     }
+}
+
+/// A repository path from git's bytes (lossy only where the platform cannot hold them).
+pub(crate) fn path_from_bytes(bytes: &[u8]) -> std::path::PathBuf {
+    gix::path::from_bstr(gix::bstr::BStr::new(bytes))
+        .map(std::borrow::Cow::into_owned)
+        .unwrap_or_else(|_| PathBuf::from(String::from_utf8_lossy(bytes).into_owned()))
 }
 
 /// The first seven hex digits of an id.
