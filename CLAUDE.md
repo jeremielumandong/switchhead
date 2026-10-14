@@ -196,3 +196,5 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
   the first batch takes 1.9 s without it and 94 ms with it.
 - `gix::path::from_bstr` returns a `Result` (non-UTF-8 paths fail on Windows); status paths
   fall back to a lossy conversion.
+- Git for Windows sets `core.autocrlf=true` in its system config, so `git apply` to the work
+  tree writes CRLF there. `TestRepo` turns it off; tests that compare file bytes rely on that.
