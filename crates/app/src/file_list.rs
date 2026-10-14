@@ -1,10 +1,35 @@
-//! Rows of a changed-file list, flat or as a folder tree (flattened, so the list can be
+//! Rows of a file list (changed files, or a commit's whole tree), flat or as a folder tree (flattened, so the list can be
 //! virtualized). Folders with a single subfolder and no files are merged (`src/app`).
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use switchhead_git::diff::FileChange;
+use switchhead_git::tree::TreeEntry;
+
+/// Something listed by path: a changed file or a file in a commit's tree.
+pub trait HasPath {
+    /// Path from the repository root.
+    fn path(&self) -> &Path;
+}
+
+impl HasPath for FileChange {
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl<T: HasPath> HasPath for &T {
+    fn path(&self) -> &Path {
+        (*self).path()
+    }
+}
+
+impl HasPath for TreeEntry {
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
 
 /// One row of the file list.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,7 +57,7 @@ pub enum FileRow {
 }
 
 /// Flat list: every file at depth 0.
-pub fn flat(files: &[FileChange]) -> Vec<FileRow> {
+pub fn flat<T>(files: &[T]) -> Vec<FileRow> {
     (0..files.len())
         .map(|index| FileRow::File { index, depth: 0 })
         .collect()
@@ -51,12 +76,17 @@ impl Node {
 }
 
 /// Folder tree: folders first, then files, each sorted by name.
-pub fn tree(files: &[FileChange], collapsed: &HashSet<PathBuf>) -> Vec<FileRow> {
+pub fn tree<T: HasPath>(files: &[T], collapsed: &HashSet<PathBuf>) -> Vec<FileRow> {
+    tree_with(files, &|p| !collapsed.contains(p))
+}
+
+/// Folder tree where `is_open` says which folders are expanded.
+pub fn tree_with<T: HasPath>(files: &[T], is_open: &dyn Fn(&Path) -> bool) -> Vec<FileRow> {
     let mut root = Node::default();
     for (i, f) in files.iter().enumerate() {
         let mut node = &mut root;
         let parts: Vec<String> = f
-            .path
+            .path()
             .parent()
             .map(|p| {
                 p.components()
@@ -70,16 +100,16 @@ pub fn tree(files: &[FileChange], collapsed: &HashSet<PathBuf>) -> Vec<FileRow> 
         node.files.push(i);
     }
     let mut out = Vec::with_capacity(files.len() * 2);
-    emit(&root, Path::new(""), 0, files, collapsed, &mut out);
+    emit(&root, Path::new(""), 0, files, is_open, &mut out);
     out
 }
 
-fn emit(
+fn emit<T: HasPath>(
     node: &Node,
     at: &Path,
     depth: u16,
-    files: &[FileChange],
-    collapsed: &HashSet<PathBuf>,
+    files: &[T],
+    is_open: &dyn Fn(&Path) -> bool,
     out: &mut Vec<FileRow>,
 ) {
     for (name, child) in &node.dirs {
@@ -94,7 +124,7 @@ fn emit(
             path = path.join(sub);
             child = next;
         }
-        let open = !collapsed.contains(&path);
+        let open = is_open(&path);
         out.push(FileRow::Dir {
             path: path.clone(),
             name,
@@ -103,11 +133,16 @@ fn emit(
             files: child.count(),
         });
         if open {
-            emit(child, &path, depth + 1, files, collapsed, out);
+            emit(child, &path, depth + 1, files, is_open, out);
         }
     }
     let mut own = node.files.clone();
-    own.sort_by(|a, b| files[*a].path.file_name().cmp(&files[*b].path.file_name()));
+    own.sort_by(|a, b| {
+        files[*a]
+            .path()
+            .file_name()
+            .cmp(&files[*b].path().file_name())
+    });
     out.extend(own.into_iter().map(|index| FileRow::File { index, depth }));
 }
 

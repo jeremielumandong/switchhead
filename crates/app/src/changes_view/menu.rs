@@ -84,15 +84,19 @@ impl ChangesView {
             return;
         }
         let description = if untracked.is_empty() {
-            "The files go back to their staged or committed content. This cannot be undone."
+            "The files go back to their staged or committed content. Undo (Ctrl/Cmd+Z) brings \
+             the changes back."
         } else {
-            "Untracked files are deleted from disk, not moved to the trash. This cannot be undone."
+            "Untracked files are deleted from disk, not moved to the trash. Undo (Ctrl/Cmd+Z) \
+             brings them back."
         };
+        let label = title.trim_end_matches('?').to_owned();
         let this = cx.entity().downgrade();
         let paths = Rc::new((tracked, untracked));
         window.open_alert_dialog(cx, move |alert, _, _| {
             let this = this.clone();
             let paths = paths.clone();
+            let label = label.clone();
             alert
                 .confirm()
                 .title(title.clone())
@@ -101,9 +105,14 @@ impl ChangesView {
                 .ok_variant(ButtonVariant::Danger)
                 .on_ok(move |_, _, cx| {
                     let (tracked, untracked) = (*paths).clone();
+                    let label = label.clone();
                     let _ = this.update(cx, |v, cx| {
                         v.run(
                             move |r| {
+                                let all: Vec<_> = tracked.iter().chain(&untracked).collect();
+                                let all: Vec<&std::path::Path> =
+                                    all.iter().map(|p| p.as_path()).collect();
+                                switchhead_git::undo::guard(r, &label, &all);
                                 if !tracked.is_empty() {
                                     r.discard(&refs(&tracked))?;
                                 }

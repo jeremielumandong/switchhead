@@ -81,9 +81,24 @@ impl RepoView {
         cx: &mut Context<Self>,
     ) {
         let rev = id.to_string();
+        let label = format!(
+            "Hard reset {} to {}",
+            self.head_label(),
+            switchhead_git::short(&id)
+        );
         let run = move |v: &mut RepoView, cx: &mut Context<RepoView>| {
-            let rev = rev.clone();
-            v.run_op("Resetting", "Reset", move |r, _, _| r.reset(&rev, mode), cx);
+            let (rev, label) = (rev.clone(), label.clone());
+            v.run_op(
+                "Resetting",
+                "Reset",
+                move |r, _, _| {
+                    if mode == ResetMode::Hard {
+                        switchhead_git::undo::guard(r, &label, &[]);
+                    }
+                    r.reset(&rev, mode)
+                },
+                cx,
+            );
         };
         if mode != ResetMode::Hard {
             run(self, cx);
@@ -100,7 +115,7 @@ impl RepoView {
                 .title(format!("Hard reset {branch} to {short}?"))
                 .description(
                     "Uncommitted changes in tracked files are thrown away, and commits after \
-                     this one leave the branch (the reflog keeps them for a while).",
+                     this one leave the branch. Undo (Ctrl/Cmd+Z) brings both back.",
                 )
                 .ok_text("Reset")
                 .ok_variant(ButtonVariant::Danger)
@@ -313,6 +328,10 @@ pub(super) fn build_commit_menu(
                 .on_click(act(Box::new(move |v, _, cx| v.copy_message(id, cx)))),
         )
         .separator()
+        .item(
+            PopupMenuItem::new("Browse Files at This Commit")
+                .on_click(act(Box::new(move |v, w, cx| v.open_tree(id, w, cx)))),
+        )
         .item(
             PopupMenuItem::new("Save as Patch…")
                 .disabled(busy)

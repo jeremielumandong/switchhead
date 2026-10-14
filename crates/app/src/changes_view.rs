@@ -608,8 +608,8 @@ impl ChangesView {
         }
     }
 
-    /// Stage, unstage or discard a hunk or the picked lines. Discarding asks first: it
-    /// cannot be undone.
+    /// Stage, unstage or discard a hunk or the picked lines. Discarding asks first and
+    /// records an undo snapshot of the file.
     fn apply_part(
         &mut self,
         action: stage::Action,
@@ -632,20 +632,35 @@ impl ChangesView {
         if chosen.is_empty() || self.busy {
             return;
         }
+        let what = match part {
+            Part::Hunk(_) => "this hunk",
+            Part::Lines => "the selected lines",
+        };
+        let file = patch.new_path.clone().or_else(|| patch.old_path.clone());
+        let label = format!(
+            "Discard {what} in {}",
+            file.as_deref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default()
+        );
         let run = move |this: &mut Self, cx: &mut Context<Self>| {
             let (patch, chosen) = (patch.clone(), chosen.clone());
+            let (file, label) = (file.clone(), label.clone());
             this.run(
-                move |r| stage::apply_lines(r, &patch, |i| chosen.contains(&i), action).map(|_| ()),
+                move |r| {
+                    if action == stage::Action::Discard
+                        && let Some(f) = &file
+                    {
+                        switchhead_git::undo::guard(r, &label, &[f.as_path()]);
+                    }
+                    stage::apply_lines(r, &patch, |i| chosen.contains(&i), action).map(|_| ())
+                },
                 cx,
             );
         };
         if action != stage::Action::Discard {
             return run(self, cx);
         }
-        let what = match part {
-            Part::Hunk(_) => "this hunk",
-            Part::Lines => "the selected lines",
-        };
         let this = cx.entity().downgrade();
         let run = Rc::new(run);
         window.open_alert_dialog(cx, move |alert, _, _| {
@@ -654,7 +669,9 @@ impl ChangesView {
             alert
                 .confirm()
                 .title(format!("Discard {what}?"))
-                .description("The changes are removed from the file. This cannot be undone.")
+                .description(
+                    "The changes are removed from the file. Undo (Ctrl/Cmd+Z) brings them back.",
+                )
                 .ok_text("Discard")
                 .ok_variant(ButtonVariant::Danger)
                 .on_ok(move |_, _, cx| {

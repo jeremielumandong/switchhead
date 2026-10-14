@@ -22,6 +22,7 @@ mod image_diff;
 mod log_file;
 mod manager;
 mod merge_view;
+mod minimap;
 mod omarchy;
 mod palette;
 mod rebase_editor;
@@ -32,6 +33,7 @@ mod sidebar_model;
 mod split;
 mod store;
 mod theme;
+mod tree_view;
 mod ui;
 mod workspace;
 

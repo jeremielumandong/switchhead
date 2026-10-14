@@ -24,7 +24,7 @@ use switchhead_git::Oid;
 use switchhead_git::diff::{FileDiff, FileStatus, LineKind, TextDiff};
 
 use crate::appearance::{rpx, ts};
-use crate::diff_model::{self, Row, SbsRow, Syntax};
+use crate::diff_model::{self, Mark, Row, SbsRow, Syntax};
 use crate::store::{DiffPrefs, WhitespacePref};
 use crate::theme::{MONO, Palette, palette};
 use crate::ui;
@@ -37,6 +37,9 @@ pub(crate) enum Content {
         sbs: Vec<SbsRow>,
         widest: Option<usize>,
         syntax: Option<Syntax>,
+        /// Minimap marks for the inline and side-by-side rows.
+        marks: Arc<Vec<Mark>>,
+        sbs_marks: Arc<Vec<Mark>>,
     },
     Binary {
         old: Option<u64>,
@@ -80,6 +83,8 @@ impl Content {
         let inline = diff_model::inline_rows(&d);
         let sbs = diff_model::sbs_rows(&d);
         let widest = diff_model::widest_row(&d, &inline);
+        let marks = Arc::new(diff_model::inline_marks(&d, &inline));
+        let sbs_marks = Arc::new(diff_model::sbs_marks(&d, &sbs));
         let syntax = sides.and_then(|(old, new)| {
             let lang = diff_model::language_for(path)?;
             diff_model::highlight(
@@ -96,6 +101,8 @@ impl Content {
             sbs,
             widest,
             syntax,
+            marks,
+            sbs_marks,
         }
     }
 
@@ -219,13 +226,16 @@ pub(crate) fn body(
             inline,
             sbs,
             widest,
+            marks,
+            sbs_marks,
             ..
         } => {
-            let count = if side_by_side {
-                sbs.len()
+            let (count, marks) = if side_by_side {
+                (sbs.len(), sbs_marks.clone())
             } else {
-                inline.len()
+                (inline.len(), marks.clone())
             };
+            let map = crate::minimap::minimap(marks, count, row_h, scroll, p);
             let widest = *widest;
             let loaded = loaded.clone();
             let list = uniform_list("diff", count, move |range: Range<usize>, _w, cx| {
@@ -236,16 +246,24 @@ pub(crate) fn body(
             })
             .track_scroll(scroll)
             .flex_1()
-            .min_h_0()
+            .min_w_0()
+            .h_full()
             .font_family(crate::appearance::editor_font_family(cx))
             .text_size(crate::appearance::editor_font_size(cx));
-            if side_by_side {
+            let list = if side_by_side {
                 list.into_any_element()
             } else {
                 list.with_width_from_item(widest)
                     .with_horizontal_sizing_behavior(ListHorizontalSizingBehavior::Unconstrained)
                     .into_any_element()
-            }
+            };
+            div()
+                .flex_1()
+                .min_h_0()
+                .flex()
+                .child(list)
+                .child(map)
+                .into_any_element()
         }
     }
 }

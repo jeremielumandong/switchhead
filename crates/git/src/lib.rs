@@ -25,6 +25,8 @@ pub mod repo;
 pub mod search;
 pub mod stage;
 pub mod status;
+pub mod tree;
+pub mod undo;
 pub mod watch;
 pub mod web;
 pub mod worktrees;
