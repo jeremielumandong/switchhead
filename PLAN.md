@@ -124,6 +124,10 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [ ] M3-6 Merge conflict helper: list conflicted files, choose ours/theirs, built-in 3-way
       merge editor (base/ours/theirs/result), open external merge tool, mark resolved,
       continue / abort banner for merge, rebase, cherry-pick, revert.
+- [ ] M3-7 Diff minimap: a narrow strip beside the diff marking added / removed / changed
+      lines over the whole file; click or drag to jump. Commit and local-changes diffs.
+- [ ] M3-8 Git identity profiles: saved name / email / signing key sets, one picked per repo
+      (written to the repo's local config); current identity shown in the commit box.
 
 ## M4 — Branches, remotes, history (Fork parity)
 
@@ -147,6 +151,10 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [ ] M4-10 Blame view and file history (follow renames), jump to commit.
 - [ ] M4-11 Reflog view and restore.
 - [ ] M4-12 Repository file tree at any commit; open / save file at revision.
+- [ ] M4-13 Undo: before a hard reset, discard or clean, snapshot the work tree and index
+      (`git stash create`, kept under `refs/switchhead/undo/*`); ref moves undo through the
+      reflog. Undo (Ctrl/Cmd+Z outside text inputs) restores the last risky action; old
+      snapshots expire.
 
 ## M5 — Assistant (coding CLIs)
 
@@ -176,7 +184,9 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [ ] M6-7 Patches: create from commits, apply patch / `git am`.
 - [ ] M6-8 GPG / SSH commit signing settings and verified badges.
 - [ ] M6-9 Open in terminal / editor / file manager; external diff and merge tools.
-- [ ] M6-10 Bisect UI (good / bad / skip, highlighted in the graph).
+- [ ] M6-10 Bisect UI (good / bad / skip, highlighted in the graph), guided: a step panel
+      with the current candidate, steps left and the remaining range, ending on the first
+      bad commit.
 
 ## M7 — Release
 
