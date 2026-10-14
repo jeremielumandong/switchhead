@@ -25,6 +25,7 @@ use switchhead_git::cli::Cancel;
 use switchhead_git::graph::{GraphRows, Node, Segment};
 use switchhead_git::log::{self, CommitLog, LogOptions, Scope, WalkStats};
 use switchhead_git::refs::{self, Label, LabelKind, Refs};
+use switchhead_git::watch::{self, Fingerprint};
 use switchhead_git::{Oid, Repo, RepoState};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
@@ -39,6 +40,8 @@ use crate::ui;
 const ROW_H: f32 = 24.0;
 /// Rows Page Up / Page Down move.
 const PAGE: isize = 20;
+/// How often `.git` is checked for outside changes.
+const WATCH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 /// The graph column never grows past this many lanes (wider rows are clipped).
 const MAX_LANES: u16 = 24;
 
@@ -152,7 +155,11 @@ pub struct RepoView {
     details_split: Entity<ResizableState>,
     /// The commit the details pane shows.
     shown: Option<Oid>,
+    /// The `.git` fingerprint the view last matched (see [`RepoView::check_changes`]).
+    watched: Option<Fingerprint>,
+    checking: bool,
     _walk: Option<Task<()>>,
+    _watch: Task<()>,
     _details: Subscription,
     _op: Option<Task<()>>,
 }
@@ -192,12 +199,59 @@ impl RepoView {
             details,
             details_split: cx.new(|_| ResizableState::default()),
             shown: None,
+            watched: None,
+            checking: false,
+            _watch: Self::watch(cx),
             _walk: None,
             _details: sub,
             _op: None,
         };
         v.reload(cx);
         v
+    }
+
+    /// Check `.git` for changes made outside the app every [`WATCH_INTERVAL`].
+    fn watch(cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(WATCH_INTERVAL).await;
+                if this.update(cx, |v, cx| v.check_changes(cx)).is_err() {
+                    break;
+                }
+            }
+        })
+    }
+
+    /// Reload when refs changed outside the app (a commit, checkout or fetch in a
+    /// terminal). Reads file metadata only, off the UI thread.
+    pub fn check_changes(&mut self, cx: &mut Context<Self>) {
+        if self.checking {
+            return;
+        }
+        self.checking = true;
+        let repo = self.repo.clone();
+        let task = cx
+            .background_executor()
+            .spawn(async move { watch::fingerprint(&repo) });
+        cx.spawn(async move |this, cx| {
+            let fp = task.await;
+            let _ = this.update(cx, |v, cx| {
+                v.checking = false;
+                // While a walk or an operation runs, its own reload covers the change;
+                // keep the old fingerprint so a change it missed is caught next time.
+                if v.loading || matches!(v.op, Some(OpStatus::Running { .. })) {
+                    return;
+                }
+                let changed = v.watched.is_some_and(|w| w.refs != fp.refs);
+                v.watched = Some(fp);
+                if changed {
+                    tracing::debug!(repo = v.repo.name(), "refs changed outside the app");
+                    v.reload(cx);
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
     }
 
     /// The tab's title.
@@ -361,6 +415,59 @@ impl RepoView {
                 None => self.pending_select = Some(head),
             }
             cx.notify();
+        }
+    }
+
+    /// Select commit `id`: at once when it is loaded, else when its batch arrives. A
+    /// commit outside a filtered view switches the graph to every branch first.
+    pub fn reveal(&mut self, id: Oid, cx: &mut Context<Self>) {
+        match self.log.row_of(&id) {
+            Some(row) => self.select(row, cx),
+            None => {
+                self.pending_select = Some(id);
+                if !self.loading && self.scope != Scope::All {
+                    self.set_scope(Scope::All, cx);
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// Branches, remote branches and tags, for Quick Launch.
+    pub fn palette_refs(&self) -> Vec<crate::palette::RefItem> {
+        use crate::palette::RefItem;
+        let r = &self.refs;
+        r.branches
+            .iter()
+            .map(|b| RefItem {
+                name: b.name.clone(),
+                kind: "Branch",
+                id: b.id,
+            })
+            .chain(
+                r.remotes
+                    .iter()
+                    .filter(|b| !b.is_symbolic_head)
+                    .map(|b| RefItem {
+                        name: b.short(),
+                        kind: "Remote branch",
+                        id: b.id,
+                    }),
+            )
+            .chain(r.tags.iter().map(|t| RefItem {
+                name: t.name.clone(),
+                kind: "Tag",
+                id: t.id,
+            }))
+            .collect()
+    }
+
+    /// Copy the selected commit's full id.
+    fn copy_commit_id(&mut self, cx: &mut Context<Self>) {
+        if let Some(i) = self.selected {
+            cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(
+                self.log.id(i).to_string(),
+            ));
         }
     }
 
@@ -1029,6 +1136,15 @@ impl Render for RepoView {
                 this.move_selection(isize::MAX / 2, cx)
             }))
             .on_action(cx.listener(|this, _: &actions::JumpToHead, _, cx| this.jump_to_head(cx)))
+            .on_action(cx.listener(|this, _: &actions::ShowAllBranches, _, cx| {
+                this.set_scope(Scope::All, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::ShowCurrentBranch, _, cx| {
+                this.set_scope(Scope::Head, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &actions::CopyCommitId, _, cx| this.copy_commit_id(cx)),
+            )
             .when(self.sidebar, |d| d.child(self.render_sidebar(&p, cx)))
             .child(
                 div().flex_1().min_w_0().h_full().child(

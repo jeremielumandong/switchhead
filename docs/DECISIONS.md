@@ -73,6 +73,16 @@ is added by hand; the grammars come with the approved gpui-kit. The diff view hi
 the old and new file once on a background thread and cuts the spans per diff line
 (`diff_model::highlight`); files over 1 MB show without colors.
 
+## 2026-10-14 — Polling `.git` metadata instead of a file watcher (for now)
+
+M2-7 needs changes made in a terminal to show up. No watcher crate is approved, so
+`switchhead_git::watch::fingerprint` hashes the size and mtime of HEAD, the reflogs,
+packed and loose refs, operation markers and the index (metadata only, no reads), and the
+repo tab polls it every second off the UI thread and again when the window is focused.
+That is cheap for `.git` (tens of files) but would not scale to a large work tree, so
+work-tree status refresh will either use `notify` (asked; pending Jeremie's answer) or
+refresh on focus and on index changes only.
+
 ## 2026-10-14 — GPUI Kit 0.7.3 on the application-patched GPUI Fast stack
 
 Jeremie asked to move to GPUI Kit 0.7.3 on GPUI Fast, as AgentOpsChat already does.

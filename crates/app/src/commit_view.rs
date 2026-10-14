@@ -1134,7 +1134,7 @@ fn status_badge(s: FileStatus, p: &Palette) -> AnyElement {
 }
 
 /// Change the diff settings (every tab follows; the workspace saves them).
-fn set_prefs(cx: &mut App, f: impl FnOnce(&mut DiffPrefs)) {
+pub(crate) fn set_prefs(cx: &mut App, f: impl FnOnce(&mut DiffPrefs)) {
     let mut prefs = *cx.global::<DiffPrefs>();
     f(&mut prefs);
     if prefs != *cx.global::<DiffPrefs>() {

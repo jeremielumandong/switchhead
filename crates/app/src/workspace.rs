@@ -20,9 +20,11 @@ use switchhead_git::discover::{self, Target};
 
 use crate::actions;
 use crate::appearance::{self, rpx, ts};
+use crate::commit_view::set_prefs;
 use crate::manager::ManagerState;
+use crate::palette::{Chip, PaletteEvent, PaletteView, RepoItem, Sources};
 use crate::repo_view::{OpStatus, RepoView};
-use crate::store::{self, Paths, State};
+use crate::store::{self, DiffPrefs, Paths, State};
 use crate::theme::{self, MONO, Palette, SANS, ThemeId, palette};
 use crate::ui;
 
@@ -50,6 +52,9 @@ pub struct Workspace {
     _save: Option<Task<()>>,
     _omarchy: Option<Task<()>>,
     _diff_prefs: gpui_kit::Subscription,
+    /// Quick Launch, while open.
+    palette: Option<(Entity<PaletteView>, gpui_kit::Subscription)>,
+    _activation: gpui_kit::Subscription,
 }
 
 impl Workspace {
@@ -96,6 +101,14 @@ impl Workspace {
                 this.save(cx);
             }
         });
+        // Coming back to the window: pick up what changed in a terminal meanwhile.
+        let activation = cx.observe_window_activation(window, |this, window, cx| {
+            if window.is_window_active()
+                && let Some(v) = this.active_repo()
+            {
+                v.update(cx, |v, cx| v.check_changes(cx));
+            }
+        });
         let reopen = state.open_tabs.clone();
         let mut ws = Self {
             manager: ManagerState::new(window, cx),
@@ -110,6 +123,8 @@ impl Workspace {
             _save: None,
             _omarchy: omarchy,
             _diff_prefs: diff_prefs,
+            palette: None,
+            _activation: activation,
         };
         for path in reopen {
             ws.open_path(path, false, cx);
@@ -213,6 +228,75 @@ impl Workspace {
         match self.tabs.get(self.active) {
             Some(Tab::Repo(v)) => Some(v),
             _ => None,
+        }
+    }
+
+    // ---------------------------------------------------------------- quick launch
+
+    fn open_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.palette.is_some() {
+            return;
+        }
+        let mut repos: Vec<RepoItem> = self
+            .tabs
+            .iter()
+            .enumerate()
+            .filter_map(|(i, t)| match t {
+                Tab::Repo(v) => {
+                    let r = &v.read(cx).repo;
+                    Some(RepoItem {
+                        name: r.name().to_owned(),
+                        path: r.root().to_path_buf(),
+                        tab: Some(i),
+                    })
+                }
+                Tab::Manager => None,
+            })
+            .collect();
+        for r in &self.state.recent {
+            if !repos.iter().any(|o| o.path == r.path) {
+                repos.push(RepoItem {
+                    name: r.name.clone(),
+                    path: r.path.clone(),
+                    tab: None,
+                });
+            }
+        }
+        let sources = Sources {
+            has_repo: self.active_repo().is_some(),
+            repos,
+            refs: self
+                .active_repo()
+                .map(|v| v.read(cx).palette_refs())
+                .unwrap_or_default(),
+        };
+        let view = cx.new(|cx| PaletteView::new(Chip::All, sources, window, cx));
+        let sub = cx.subscribe_in(&view, window, |this, _, ev: &PaletteEvent, window, cx| {
+            this.close_palette(window, cx);
+            match ev {
+                PaletteEvent::Run(action) => window.dispatch_action(action.boxed_clone(), cx),
+                PaletteEvent::SwitchTab(i) => this.activate(*i, cx),
+                PaletteEvent::Open(path) => this.open_path(path.clone(), true, cx),
+                PaletteEvent::Reveal(id) => {
+                    if let Some(v) = this.active_repo() {
+                        v.update(cx, |v, cx| v.reveal(*id, cx));
+                    }
+                }
+                PaletteEvent::Dismiss => {}
+            }
+        });
+        self.palette = Some((view, sub));
+        cx.notify();
+    }
+
+    /// Close Quick Launch and give focus back to the active tab.
+    fn close_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.palette.take().is_some() {
+            match self.active_repo() {
+                Some(v) => window.focus(&v.focus_handle(cx), cx),
+                None => window.focus(&self.focus, cx),
+            }
+            cx.notify();
         }
     }
 
@@ -1012,7 +1096,34 @@ impl Render for Workspace {
                 this.set_zoom(appearance::zoom_out(appearance::zoom(cx)), w, cx)
             }))
             .on_action(cx.listener(|this, _: &actions::ZoomReset, w, cx| this.set_zoom(1.0, w, cx)))
-            .on_action(cx.listener(|this, _: &actions::Dismiss, _, cx| {
+            .on_action(
+                cx.listener(|this, _: &actions::QuickLaunch, w, cx| this.open_palette(w, cx)),
+            )
+            .on_action(cx.listener(|this, _: &actions::NewRepository, w, cx| {
+                this.activate(0, cx);
+                this.prompt_init(w, cx);
+            }))
+            .on_action(cx.listener(|this, _: &actions::ShowSettings, _, cx| {
+                this.settings_open = true;
+                cx.notify();
+            }))
+            .on_action(|_: &actions::ToggleDiffLayout, _, cx| {
+                set_prefs(cx, |p| p.side_by_side = !p.side_by_side)
+            })
+            .on_action(|_: &actions::ToggleFileTree, _, cx| set_prefs(cx, |p| p.tree = !p.tree))
+            .on_action(|_: &actions::CycleWhitespace, _, cx| {
+                set_prefs(cx, |p| p.whitespace = p.whitespace.next())
+            })
+            .on_action(|_: &actions::MoreContext, _, cx| {
+                set_prefs(cx, |p| {
+                    p.context = (p.context + 1).min(DiffPrefs::MAX_CONTEXT)
+                })
+            })
+            .on_action(|_: &actions::LessContext, _, cx| {
+                set_prefs(cx, |p| p.context = p.context.saturating_sub(1))
+            })
+            .on_action(cx.listener(|this, _: &actions::Dismiss, w, cx| {
+                this.close_palette(w, cx);
                 this.settings_open = false;
                 this.manager.dismiss();
                 cx.notify();
@@ -1021,6 +1132,24 @@ impl Render for Workspace {
             .child(div().flex_1().min_h_0().flex().child(rail).child(center))
             .child(status)
             .children(settings)
+            .when_some(self.palette.as_ref(), |d, (view, _)| {
+                d.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .flex()
+                        .justify_center()
+                        .items_start()
+                        .pt(rpx(72.))
+                        .child(
+                            div()
+                                .on_mouse_down_out(
+                                    cx.listener(|this, _, w, cx| this.close_palette(w, cx)),
+                                )
+                                .child(view.clone()),
+                        ),
+                )
+            })
     }
 }
 

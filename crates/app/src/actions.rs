@@ -1,6 +1,6 @@
 //! Actions and their default keybindings.
 
-use gpui_kit::{App, KeyBinding, actions};
+use gpui_kit::{Action, App, KeyBinding, actions};
 
 actions!(
     switchhead,
@@ -29,8 +29,87 @@ actions!(
         SelectLast,
         JumpToHead,
         Dismiss,
+        QuickLaunch,
+        NewRepository,
+        ShowSettings,
+        ShowAllBranches,
+        ShowCurrentBranch,
+        CopyCommitId,
+        ToggleDiffLayout,
+        ToggleFileTree,
+        CycleWhitespace,
+        MoreContext,
+        LessContext,
     ]
 );
+
+/// A command the palette offers.
+pub struct Command {
+    /// What it says in the list.
+    pub label: &'static str,
+    /// Its group (shown on the right).
+    pub group: &'static str,
+    /// The action it dispatches.
+    pub action: Box<dyn Action>,
+    /// Only offered while a repository tab is active.
+    pub needs_repo: bool,
+}
+
+/// Every command, in the palette's order.
+pub fn commands() -> Vec<Command> {
+    fn c(
+        label: &'static str,
+        group: &'static str,
+        action: impl Action,
+        needs_repo: bool,
+    ) -> Command {
+        Command {
+            label,
+            group,
+            action: Box::new(action),
+            needs_repo,
+        }
+    }
+    vec![
+        c("Fetch", "Remote", Fetch, true),
+        c("Pull", "Remote", Pull, true),
+        c("Push", "Remote", Push, true),
+        c("Stash Changes", "Stash", Stash, true),
+        c("Pop Stash", "Stash", PopStash, true),
+        c("Refresh", "Repository", Refresh, true),
+        c("Jump to HEAD", "History", JumpToHead, true),
+        c("Show All Branches", "History", ShowAllBranches, true),
+        c(
+            "Show Current Branch Only",
+            "History",
+            ShowCurrentBranch,
+            true,
+        ),
+        c("Copy Commit ID", "History", CopyCommitId, true),
+        c(
+            "Toggle Inline / Side-by-Side Diff",
+            "Diff",
+            ToggleDiffLayout,
+            false,
+        ),
+        c("Toggle File List / Tree", "Diff", ToggleFileTree, false),
+        c("Change Whitespace Mode", "Diff", CycleWhitespace, false),
+        c("More Context Lines", "Diff", MoreContext, false),
+        c("Fewer Context Lines", "Diff", LessContext, false),
+        c("Open Repository…", "Repositories", OpenRepository, false),
+        c("Clone Repository…", "Repositories", CloneRepository, false),
+        c("New Repository…", "Repositories", NewRepository, false),
+        c("Repository Manager", "Repositories", ShowManager, false),
+        c("Close Tab", "Window", CloseTab, true),
+        c("Next Tab", "Window", NextTab, false),
+        c("Previous Tab", "Window", PreviousTab, false),
+        c("Toggle Sidebar", "Window", ToggleSidebar, true),
+        c("Appearance…", "Window", ShowSettings, false),
+        c("Zoom In", "Window", ZoomIn, false),
+        c("Zoom Out", "Window", ZoomOut, false),
+        c("Actual Size", "Window", ZoomReset, false),
+    ]
+}
 
 /// Register the default keybindings (Fork's where it has one).
 pub fn init(cx: &mut App) {
@@ -63,5 +142,30 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("home", SelectFirst, Some("Files")),
         KeyBinding::new("end", SelectLast, Some("Files")),
         KeyBinding::new("secondary-shift-h", JumpToHead, None),
+        KeyBinding::new("secondary-p", QuickLaunch, None),
+        KeyBinding::new("secondary-,", ShowSettings, None),
+        KeyBinding::new("secondary-shift-c", CopyCommitId, Some("Graph")),
     ]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn commands_are_listed_once() {
+        let cmds = commands();
+        for (i, a) in cmds.iter().enumerate() {
+            assert!(!a.label.is_empty());
+            for b in &cmds[i + 1..] {
+                assert!(a.label != b.label, "{} is listed twice", a.label);
+                assert!(
+                    !a.action.partial_eq(&*b.action),
+                    "{} and {} run the same action",
+                    a.label,
+                    b.label
+                );
+            }
+        }
+    }
 }

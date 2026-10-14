@@ -23,6 +23,7 @@ pub mod refs;
 pub mod repo;
 pub mod stage;
 pub mod status;
+pub mod watch;
 
 use std::fmt::Display;
 use std::path::PathBuf;
