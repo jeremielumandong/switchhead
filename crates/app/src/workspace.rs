@@ -54,6 +54,7 @@ pub struct Workspace {
     _diff_prefs: gpui_kit::Subscription,
     /// Quick Launch, while open.
     palette: Option<(Entity<PaletteView>, gpui_kit::Subscription)>,
+    _activation: gpui_kit::Subscription,
 }
 
 impl Workspace {
@@ -100,6 +101,14 @@ impl Workspace {
                 this.save(cx);
             }
         });
+        // Coming back to the window: pick up what changed in a terminal meanwhile.
+        let activation = cx.observe_window_activation(window, |this, window, cx| {
+            if window.is_window_active()
+                && let Some(v) = this.active_repo()
+            {
+                v.update(cx, |v, cx| v.check_changes(cx));
+            }
+        });
         let reopen = state.open_tabs.clone();
         let mut ws = Self {
             manager: ManagerState::new(window, cx),
@@ -115,6 +124,7 @@ impl Workspace {
             _omarchy: omarchy,
             _diff_prefs: diff_prefs,
             palette: None,
+            _activation: activation,
         };
         for path in reopen {
             ws.open_path(path, false, cx);
