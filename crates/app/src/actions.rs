@@ -53,6 +53,7 @@ actions!(
         NewTag,
         PushAllTags,
         AddRemote,
+        FindCommits,
         ToggleActivity,
     ]
 );
@@ -93,6 +94,7 @@ pub fn commands() -> Vec<Command> {
         c("Pop Stash", "Stash", PopStash, true),
         c("Refresh", "Repository", Refresh, true),
         c("Jump to HEAD", "History", JumpToHead, true),
+        c("Find Commits…", "History", FindCommits, true),
         c("Show All Branches", "History", ShowAllBranches, true),
         c(
             "Show Current Branch Only",
@@ -169,6 +171,7 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("secondary-p", QuickLaunch, None),
         KeyBinding::new("secondary-,", ShowSettings, None),
         KeyBinding::new("secondary-shift-c", CopyCommitId, Some("Graph")),
+        KeyBinding::new("secondary-f", FindCommits, Some("Graph")),
         KeyBinding::new("up", SelectUp, Some("Changes && !Input")),
         KeyBinding::new("down", SelectDown, Some("Changes && !Input")),
         KeyBinding::new("home", SelectFirst, Some("Changes && !Input")),

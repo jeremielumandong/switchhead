@@ -45,6 +45,7 @@ mod commit_menu;
 mod form;
 mod rebase;
 mod remote_ops;
+mod search;
 mod section_menu;
 mod sidebar;
 mod stash_ops;
@@ -149,6 +150,8 @@ pub struct RepoView {
     pub activity_open: bool,
     /// Activity entries the user folded.
     activity_collapsed: HashSet<u64>,
+    /// The commit search bar above the graph.
+    search: Option<search::Search>,
     /// The interactive rebase editor, shown in place of the graph.
     rebase: Option<(Entity<crate::rebase_editor::RebaseEditor>, Subscription)>,
     details: Entity<CommitView>,
@@ -217,6 +220,7 @@ impl RepoView {
             activity_open: false,
             activity_collapsed: HashSet::new(),
             rebase: None,
+            search: None,
             details,
             details_split: cx.new(|_| ResizableState::default()),
             shown: None,
@@ -526,6 +530,7 @@ impl RepoView {
         if self.scope != scope {
             self.scope = scope;
             self.reload(cx);
+            self.run_search(false, cx);
             cx.notify();
         }
     }
@@ -744,6 +749,7 @@ impl RepoView {
         let merge = self.log.parents(i).len() > 1;
         let colors = graph_paint::colors(p);
         let selected = self.selected == Some(i);
+        let dim = self.search.as_ref().is_some_and(|s| s.dims(&id));
         let graph = canvas(
             |_, _, _| {},
             move |bounds, _, window, _| {
@@ -781,6 +787,7 @@ impl RepoView {
             .text_size(ts::BODY)
             .when(selected, |d| d.bg(p.sel))
             .when(!selected, |d| d.hover(|s| s.bg(p.hover)))
+            .when(dim, |d| d.opacity(0.35))
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.selected = Some(i);
                 window.focus(&this.focus, cx);
@@ -896,6 +903,7 @@ impl RepoView {
             .flex()
             .flex_col()
             .bg(p.surface)
+            .children(self.render_search(p, cx))
             .child(self.render_graph_header(p, graph_w, cx))
             .when(self.loading && count > 0, |d| {
                 d.child(ui::loading_bar("graph-loading", p))
@@ -1002,6 +1010,12 @@ impl Render for RepoView {
                 this.new_tag_at_selection(window, cx)
             }))
             .on_action(cx.listener(|this, _: &actions::PushAllTags, _, cx| this.push_all_tags(cx)))
+            .on_action(cx.listener(|this, _: &actions::AddRemote, window, cx| {
+                this.add_remote_dialog(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::FindCommits, window, cx| {
+                this.open_search(window, cx)
+            }))
             .on_action(cx.listener(|this, _: &actions::StageAll, _, cx| {
                 this.changes.update(cx, |c, cx| c.stage_all(cx))
             }))

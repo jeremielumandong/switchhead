@@ -217,6 +217,9 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
 - The app reads `SWITCHHEAD_DATA` (data folder), `SWITCHHEAD_THEME` and `SWITCHHEAD_ZOOM`;
   screenshots: `Xvfb :99 &`, then `DISPLAY=:99 SWITCHHEAD_DATA=<tmp> switchhead <repo>` and
   `import -window root shot.png` (ImageMagick); `xdotool` drives clicks and keys.
+- Escape typed in a gpui-kit `Input` reaches containers as the app's global `actions::Dismiss`
+  (bound with no context), not as a key-down or the input's own `Escape`: a bar that closes
+  on Escape handles `Dismiss` (`repo_view/search.rs`).
 - gpui-kit compiles `component::highlighter::SyntaxHighlighter` only with a `tree-sitter*`
   feature (the workspace enables `tree-sitter-languages`); without one the module is a stub
   and `SyntaxHighlighter` does not exist. Unknown names fall back to `"text"` (no colors).

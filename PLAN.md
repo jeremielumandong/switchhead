@@ -222,8 +222,14 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   (New Branch…, Add Remote…, New Tag… / Push All Tags, Stash Changes…, Collapse), and
   remotes nothing was fetched from still show their folder (`repo_view/section_menu.rs`,
   `remote_ops.rs`).*
-- [ ] M4-9 Search: commits by message, author, id, file path; content search (`-S`/`-G`);
+- [x] M4-9 Search: commits by message, author, id, file path; content search (`-S`/`-G`);
       results highlighted in the graph.
+  *Ctrl/Cmd+F, the rail's Search or "Find Commits…" opens a bar over the graph: Message,
+  Author, Commit ID, File Path, Content (`-S`) or Content (regex, `-G`). `git::search`
+  streams matches from `git log` over the graph's scope (tested); ids match the loaded
+  graph. Other rows dim, "3 of 17" counts, Enter / Shift+Enter or the arrows step
+  through the matches, Esc closes; typing searches again after a 250 ms pause and a
+  scope change re-runs it (`repo_view/search.rs`).*
 - [ ] M4-10 Blame view and file history (follow renames), jump to commit.
 - [ ] M4-11 Reflog view and restore.
 - [ ] M4-12 Repository file tree at any commit; open / save file at revision.
@@ -271,6 +277,8 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [ ] M7-3 Updates, crash logs, docs site.
 
 ## Follow-ups
+
+- Search: a pickaxe search that prints nothing for a long time is only stopped at its next match (`run_lines` checks cancel between lines); kill it from a watcher like `run_streaming`.
 
 - Stash details: also list the untracked files a stash holds (its third parent).
 
