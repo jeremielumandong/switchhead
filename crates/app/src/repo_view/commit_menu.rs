@@ -212,7 +212,7 @@ pub(super) fn build_commit_menu(
     let Some(v) = view.upgrade() else {
         return menu;
     };
-    let (id, is_head, merge, busy, branch, web, summary) = {
+    let (id, is_head, merge, busy, branch, web, summary, in_progress) = {
         let v = v.read(cx);
         let Some(i) = v.selected else {
             return menu;
@@ -226,6 +226,7 @@ pub(super) fn build_commit_menu(
             v.refs.head_branch.clone(),
             v.commit_web_page(id),
             v.log.summary(i).to_owned(),
+            v.state.command().is_some(),
         )
     };
     let act = |f: Box<ViewAction>| {
@@ -296,6 +297,14 @@ pub(super) fn build_commit_menu(
             }
             m
         },
+    );
+    let rebase_summary = summary.clone();
+    menu = menu.item(
+        PopupMenuItem::new(format!("Interactive Rebase {target} from Here…"))
+            .disabled(busy || is_head || in_progress)
+            .on_click(act(Box::new(move |v, w, cx| {
+                v.open_rebase_editor(id, rebase_summary.clone(), w, cx)
+            }))),
     );
     let full = id.to_string();
     let short_s = short.clone();

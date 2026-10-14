@@ -43,6 +43,7 @@ mod activity_panel;
 mod branch_ops;
 mod commit_menu;
 mod form;
+mod rebase;
 mod remote_ops;
 mod sidebar;
 
@@ -145,6 +146,8 @@ pub struct RepoView {
     pub activity_open: bool,
     /// Activity entries the user folded.
     activity_collapsed: HashSet<u64>,
+    /// The interactive rebase editor, shown in place of the graph.
+    rebase: Option<(Entity<crate::rebase_editor::RebaseEditor>, Subscription)>,
     details: Entity<CommitView>,
     details_split: Entity<ResizableState>,
     /// The commit the details pane shows.
@@ -210,6 +213,7 @@ impl RepoView {
             activity: Activity::default(),
             activity_open: false,
             activity_collapsed: HashSet::new(),
+            rebase: None,
             details,
             details_split: cx.new(|_| ResizableState::default()),
             shown: None,
@@ -1034,7 +1038,11 @@ impl RepoView {
                         .child(self.changes.clone()),
                 )
             })
-            .when(self.mode == Mode::Commits, |d| {
+            .when_some(
+                self.rebase.as_ref().filter(|_| self.mode == Mode::Commits),
+                |d, (editor, _)| d.child(div().flex_1().min_w_0().h_full().child(editor.clone())),
+            )
+            .when(self.mode == Mode::Commits && self.rebase.is_none(), |d| {
                 d.child(
                     div().flex_1().min_w_0().h_full().child(
                         v_resizable("graph-details")

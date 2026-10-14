@@ -193,7 +193,16 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   `format-patch -1`), and Open on GitHub / GitLab / Bitbucket (`git::web`, from the
   upstream's remote or origin). Cherry-pick and revert are off for merge commits (no `-m`
   choice yet, Follow-ups). "Interactive rebase from here" comes with its editor in M4-5.*
-- [ ] M4-5 Interactive rebase editor (drag to reorder, pick/reword/edit/squash/fixup/drop).
+- [x] M4-5 Interactive rebase editor (drag to reorder, pick/reword/edit/squash/fixup/drop).
+  *Commit menu ▸ "Interactive Rebase main from Here…" replaces the graph with
+  `rebase_editor.rs`: the commits after the selected one, newest first; drag or Alt+↑/↓
+  to reorder, P R E S F D or each row's menu for the action, a message area for reword
+  (starts from the old message) and squash (the combined commit's), autostash, and a
+  warning when merges in the range would be flattened. Start is off until something
+  changed and while the plan has a problem (`rebase_model.rs`, tested). It runs
+  `git::rebase::run`; a stop (conflict, `edit`) shows "Rebase paused: …" and the banner.
+  `rebase::plan` now refuses a base outside HEAD's history, a squash message survives a
+  later fixup in its group, and old todo/message folders are cleared.*
 - [ ] M4-6 Tags: create (lightweight / annotated), delete, push, checkout.
 - [ ] M4-7 Stashes: create (with untracked, staged only, keep index), apply, pop, drop,
       view diff, create branch from stash.
