@@ -72,16 +72,27 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 
 ## M2 — App shell (`crates/app`)
 
-- [ ] M2-1 Port from Switchyard: `theme.rs`, `omarchy.rs`, `appearance.rs`, `ui.rs`,
+- [x] M2-1 Port from Switchyard: `theme.rs`, `omarchy.rs`, `appearance.rs`, `ui.rs`,
       `split.rs`, `log_file.rs`, `AppAssets` (see CLAUDE.md table). Theme tests pass.
-- [ ] M2-2 Window: title bar with repo tabs, toolbar (Fetch, Pull, Push, Stash, Pop, Branch,
+      *Ported; environment colors became `deleted` / `modified` / `added`, env badges a
+      generic `ui::chip`. `assets.rs` serves Lucide icons as `icons/sh-*.svg`.*
+- [x] M2-2 Window: title bar with repo tabs, toolbar (Fetch, Pull, Push, Stash, Pop, Branch,
       Terminal, Assistant), 48px rail, sidebar, center, status bar; zoom; theme picker.
-- [ ] M2-3 Repository manager: recent repos, Open Folder (repo → tab; plain folder → scan and
+      *`workspace.rs`. Fetch / Pull / Push / Stash / Pop / Refresh run through `ops` on a
+      thread with progress in the status bar; Branch, Terminal, Search and Assistant are
+      shown disabled until their milestones. Theme and zoom in the rail's Appearance popover
+      (zoom also on Ctrl/Cmd +/−/0); tabs, theme and zoom persist in `state.json`.*
+- [x] M2-3 Repository manager: recent repos, Open Folder (repo → tab; plain folder → scan and
       list its repos grouped by subfolder, open any as a tab), Clone, Init; repos persist
       (`directories`, JSON).
-- [ ] M2-4 Commit graph view: virtualized list (graph lanes painted on a canvas per row, ref
+      *`manager.rs` + `store.rs` (`SWITCHHEAD_DATA` overrides the data folder). Clone streams
+      git's progress and can be cancelled. `switchhead <path>` opens a path at startup.*
+- [x] M2-4 Commit graph view: virtualized list (graph lanes painted on a canvas per row, ref
       chips, summary, author, date, short id), keyboard navigation, streaming fill, jump to
       HEAD, filter by branch.
+      *`repo_view.rs` + `graph_paint.rs`; the walk runs on its own thread and batches reach
+      the UI over a channel. All / Current switch, double-click a ref to show only it, refs
+      sidebar (virtualized). Shallow clones now walk (boundary commits become roots).*
 - [ ] M2-5 Commit details: header (author, committer, date, parents, refs, full message),
       changed files (list and tree), file diff (inline and side-by-side, word highlights,
       ignore whitespace, context lines, syntax highlighting via gpui-component).
@@ -172,5 +183,8 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   added runs and reuse `diff.rs`'s word diff, as `diff_text` does.
 - Partial staging of a new (intent-to-add) or deleted file: build the patch against an
   empty file instead of refusing a partial selection.
+- Graph column width follows the widest row loaded, so one busy stretch widens the whole
+  list; size it to the visible rows (or compact lanes, above).
+- Recent repositories whose folder is gone still show; mark them and offer to remove.
 - Rebase message files stay in `.git/switchhead/` after a stopped rebase that the user
   then aborts; sweep old `rebase-*` dirs when a repo opens.

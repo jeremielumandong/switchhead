@@ -346,7 +346,18 @@ pub fn walk(
         Order::Date => topo::Sorting::DateOrder,
         Order::Topo => topo::Sorting::TopoOrder,
     };
-    let iter = topo::Builder::from_iters(&r.objects, tips, None::<Vec<Oid>>)
+    // A shallow clone lacks the parents of its boundary commits: show those commits as
+    // roots instead of failing on the missing objects.
+    let shallow: std::collections::HashSet<Oid> = r
+        .shallow_commits()
+        .gix()?
+        .map(|c| c.iter().copied().collect())
+        .unwrap_or_default();
+    let objects = ShallowCut {
+        inner: &r.objects,
+        shallow: &shallow,
+    };
+    let iter = topo::Builder::from_iters(&objects, tips, None::<Vec<Oid>>)
         .sorting(sorting)
         .with_commit_graph(r.commit_graph_if_enabled().gix()?)
         .build()
@@ -370,7 +381,7 @@ pub fn walk(
             break;
         }
         let info = info.gix()?;
-        let commit = r.objects.find_commit(&info.id, &mut buf).gix()?;
+        let commit = objects.find_commit(&info.id, &mut buf).gix()?;
         let author = commit.author().gix()?;
         let committer_time = commit.committer().map(|c| c.seconds()).unwrap_or(0);
         let (name, email) = match mailmap.try_resolve_ref(author) {
@@ -436,6 +447,48 @@ pub fn walk(
     Ok(stats)
 }
 
+/// The object database as the walk sees it: commits on a shallow clone's boundary have
+/// their `parent` lines removed (their parents were never fetched).
+struct ShallowCut<'a, F> {
+    inner: &'a F,
+    shallow: &'a std::collections::HashSet<Oid>,
+}
+
+impl<F: gix::objs::Find> gix::objs::Find for ShallowCut<'_, F> {
+    fn try_find<'a>(
+        &self,
+        id: &gix::oid,
+        buffer: &'a mut Vec<u8>,
+    ) -> gix::Result<Option<gix::objs::Data<'a>>> {
+        let (kind, hash) = match self.inner.try_find(id, buffer)? {
+            Some(d) => (d.kind, d.object_hash),
+            None => return Ok(None),
+        };
+        if kind == gix::object::Kind::Commit && self.shallow.contains(id) {
+            strip_parents(buffer);
+        }
+        Ok(Some(gix::objs::Data::new(buffer, kind, hash)))
+    }
+}
+
+/// Remove the `parent` lines from a raw commit's header.
+fn strip_parents(raw: &mut Vec<u8>) {
+    let header_end = raw
+        .windows(2)
+        .position(|w| w == b"\n\n")
+        .map_or(raw.len(), |p| p + 1);
+    let mut out = Vec::with_capacity(raw.len());
+    let mut pos = 0;
+    for line in raw[..header_end].split_inclusive(|b| *b == b'\n') {
+        if !line.starts_with(b"parent ") {
+            out.extend_from_slice(line);
+        }
+        pos += line.len();
+    }
+    out.extend_from_slice(&raw[pos..]);
+    *raw = out;
+}
+
 /// Walk the whole log into one [`CommitLog`] and [`GraphRows`] (tests, small repos).
 pub fn collect(repo: &Repo, opts: &LogOptions) -> Result<(CommitLog, GraphRows)> {
     let mut log = CommitLog::new();
@@ -486,6 +539,43 @@ mod tests {
         // `git log --date-order` agrees.
         let git = t.git(&["log", "--all", "--date-order", "--format=%s"]);
         assert_eq!(git.lines().collect::<Vec<_>>(), summaries(&log));
+    }
+
+    #[test]
+    fn shallow_clones_end_at_their_boundary() {
+        let t = TestRepo::new();
+        for i in 0..5 {
+            t.commit_file("a", &i.to_string(), &format!("c{i}"));
+        }
+        let dest = tempfile::tempdir().unwrap();
+        // `file://` makes git honor --depth; Windows paths need a third slash.
+        let path = t.path().display().to_string().replace('\\', "/");
+        let url = if path.starts_with('/') {
+            format!("file://{path}")
+        } else {
+            format!("file:///{path}")
+        };
+        t.git(&[
+            "clone",
+            "-q",
+            "--depth",
+            "2",
+            &url,
+            &dest.path().join("s").to_string_lossy(),
+        ]);
+        let repo = Repo::open(&dest.path().join("s")).unwrap();
+        let (log, graph) = collect(&repo, &LogOptions::default()).unwrap();
+        assert_eq!(summaries(&log), ["c4", "c3"]);
+        // The boundary commit is a root here.
+        assert!(log.parents(1).is_empty());
+        assert_eq!(graph.len(), 2);
+    }
+
+    #[test]
+    fn strips_only_header_parent_lines() {
+        let mut raw = b"tree 1\nparent 2\nparent 3\nauthor a\n\nparent in body\n".to_vec();
+        strip_parents(&mut raw);
+        assert_eq!(raw, b"tree 1\nauthor a\n\nparent in body\n");
     }
 
     #[test]

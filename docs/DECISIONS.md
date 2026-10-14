@@ -48,3 +48,18 @@ which commit git is asking about, and must be a shell script on every platform. 
 `exec git commit --amend --allow-empty --cleanup=strip -q -F '<file>'` (after the last
 squash/fixup of a group). `GIT_SEQUENCE_EDITOR` is just `cp '<todo>'`. Hooks still run, and
 a failing amend stops the rebase like any `exec`.
+
+## 2026-10-14 — Ported design-system modules keep their unused parts
+
+`theme.rs`, `appearance.rs`, `ui.rs`, `split.rs` and `omarchy.rs` are ported whole from
+Switchyard so the two apps keep one design system and later fixes port cleanly. Parts that
+switchhead does not use yet (split panes, terminal colors, font choices) stay, with
+`#![allow(dead_code)]` at the top of those modules only; switchhead's own modules get no
+such allowance.
+
+## 2026-10-14 — Worker threads talk to the UI over tokio channels
+
+Log walks, git operations and clones run on their own threads (they can take seconds) and
+send results to a GPUI task over `tokio::sync::mpsc` (the `sync` feature only, no runtime;
+tokio is already approved "sync only"). Short one-off reads (classify a path, scan a
+folder) use GPUI's background executor.
