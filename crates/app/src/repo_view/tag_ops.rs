@@ -48,6 +48,7 @@ impl RepoView {
             placeholder: "Tag name, e.g. v1.2.0",
             taken: self.refs.tags.iter().map(|t| t.name.clone()).collect(),
             message: Some("Message (optional)"),
+            url: None,
             checks: match &remote {
                 Some(_) => vec![("Push it to the remote", false)],
                 None => Vec::new(),
@@ -99,6 +100,7 @@ impl RepoView {
             placeholder: "",
             taken: Vec::new(),
             message: None,
+            url: None,
             checks: match &remote {
                 Some(_) => vec![("Also delete it on the remote", false)],
                 None => Vec::new(),

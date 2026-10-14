@@ -45,6 +45,7 @@ mod commit_menu;
 mod form;
 mod rebase;
 mod remote_ops;
+mod section_menu;
 mod sidebar;
 mod stash_ops;
 mod tag_ops;

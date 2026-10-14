@@ -34,6 +34,7 @@ impl RepoView {
             placeholder: "",
             taken: Vec::new(),
             message: Some("Message (optional)"),
+            url: None,
             checks: vec![
                 ("Include untracked files", false),
                 ("Only staged changes", false),
@@ -111,6 +112,7 @@ impl RepoView {
             placeholder: "",
             taken: Vec::new(),
             message: None,
+            url: None,
             checks: Vec::new(),
         };
         self.open_form(
@@ -152,6 +154,7 @@ impl RepoView {
             placeholder: "Branch name",
             taken: self.branch_names(),
             message: None,
+            url: None,
             checks: Vec::new(),
         };
         self.open_form(

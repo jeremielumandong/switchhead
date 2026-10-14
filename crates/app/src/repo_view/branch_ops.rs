@@ -36,6 +36,7 @@ impl RepoView {
             placeholder: "Branch name",
             taken: self.branch_names(),
             message: None,
+            url: None,
             checks: vec![("Check out the new branch", true)],
         };
         self.open_form(
@@ -86,6 +87,7 @@ impl RepoView {
             placeholder: "Branch name",
             taken,
             message: None,
+            url: None,
             checks: Vec::new(),
         };
         self.open_form(
@@ -133,6 +135,7 @@ impl RepoView {
             placeholder: "Branch name",
             taken: Vec::new(),
             message: None,
+            url: None,
             checks,
         };
         self.open_form(
@@ -183,6 +186,7 @@ impl RepoView {
             placeholder: "Branch name",
             taken: Vec::new(),
             message: None,
+            url: None,
             checks: Vec::new(),
         };
         self.open_form(
@@ -315,11 +319,12 @@ pub(super) fn build_ref_menu(
             remotes,
         )
     };
-    let Some(SideRow::Ref {
-        target, rev, id, ..
-    }) = row
-    else {
-        return menu;
+    let (target, rev, id) = match row {
+        Some(SideRow::Ref {
+            target, rev, id, ..
+        }) => (target, rev, id),
+        Some(row) => return super::section_menu::build_section_menu(menu, row, view, cx),
+        None => return menu,
     };
     let act = |f: Box<ViewAction>| {
         let view = view.clone();

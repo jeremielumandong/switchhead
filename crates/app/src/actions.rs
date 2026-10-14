@@ -52,6 +52,7 @@ actions!(
         NewBranch,
         NewTag,
         PushAllTags,
+        AddRemote,
         ToggleActivity,
     ]
 );
@@ -87,6 +88,7 @@ pub fn commands() -> Vec<Command> {
         c("Fetch…", "Remote", Fetch, true),
         c("Pull…", "Remote", Pull, true),
         c("Push…", "Remote", Push, true),
+        c("Add Remote…", "Remote", AddRemote, true),
         c("Stash Changes…", "Stash", Stash, true),
         c("Pop Stash", "Stash", PopStash, true),
         c("Refresh", "Repository", Refresh, true),

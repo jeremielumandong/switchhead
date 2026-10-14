@@ -180,6 +180,15 @@ impl RepoView {
                             _ => groups.push((remote, vec![leaf])),
                         }
                     }
+                    // Remotes nothing was fetched from yet still get their folder.
+                    if !filtering {
+                        for name in self.refs.remote_names() {
+                            if !groups.iter().any(|(r, _)| r == name) {
+                                groups.push((name.to_owned(), Vec::new()));
+                            }
+                        }
+                        groups.sort_by(|a, b| a.0.cmp(&b.0));
+                    }
                     for (remote, mut leaves) in groups {
                         let key = format!("r/{remote}");
                         let open = filtering || !self.collapsed_folders.contains(&key);
@@ -379,7 +388,7 @@ impl RepoView {
         cx.notify();
     }
 
-    fn toggle_folder(&mut self, key: &str, cx: &mut Context<Self>) {
+    pub(super) fn toggle_folder(&mut self, key: &str, cx: &mut Context<Self>) {
         if !self.collapsed_folders.remove(key) {
             self.collapsed_folders.insert(key.to_owned());
         }
@@ -640,6 +649,11 @@ impl RepoView {
                     .text_color(p.fg2)
                     .hover(|s| s.text_color(p.fg))
                     .on_click(cx.listener(move |this, _, _, cx| this.toggle_section(section, cx)))
+                    .capture_any_mouse_down(cx.listener(move |this, ev: &MouseDownEvent, _, _| {
+                        if ev.button == MouseButton::Right {
+                            this.menu_row = Some(i);
+                        }
+                    }))
                     .child(disclosure(open, p))
                     .child(svg().path(section.icon()).size(rpx(13.)).text_color(p.fg3))
                     .child(
@@ -670,6 +684,11 @@ impl RepoView {
                 .text_color(p.fg3)
                 .hover(|s| s.bg(p.hover).text_color(p.fg2))
                 .on_click(cx.listener(move |this, _, _, cx| this.toggle_folder(&key, cx)))
+                .capture_any_mouse_down(cx.listener(move |this, ev: &MouseDownEvent, _, _| {
+                    if ev.button == MouseButton::Right {
+                        this.menu_row = Some(i);
+                    }
+                }))
                 .child(disclosure(open, p))
                 .child(div().flex_1().min_w_0().truncate().child(name))
                 .into_any_element(),

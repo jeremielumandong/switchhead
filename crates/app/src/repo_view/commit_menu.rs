@@ -21,7 +21,7 @@ impl RepoView {
         }
     }
 
-    fn busy(&self) -> bool {
+    pub(super) fn busy(&self) -> bool {
         matches!(self.op, Some(OpStatus::Running { .. }))
     }
 

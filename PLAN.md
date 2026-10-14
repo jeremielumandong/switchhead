@@ -215,7 +215,13 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   menu has Apply, Pop, New Branch from Stash…, Drop… (asks) and Copy Message. Each
   index-based command first checks `stash@{n}` is still the stash that was shown. The
   untracked part of a stash is not listed yet (Follow-ups).*
-- [ ] M4-8 Remotes: add / edit / remove, fetch one, prune.
+- [x] M4-8 Remotes: add / edit / remove, fetch one, prune.
+  *Right-click a remote's folder in the sidebar: Fetch <remote>, Prune Deleted Branches,
+  Edit… (rename and URL), Remove… (asks), Copy URL. Add Remote… (name, URL, fetch now)
+  is on the Remotes header and in the palette. Every section header has a menu now
+  (New Branch…, Add Remote…, New Tag… / Push All Tags, Stash Changes…, Collapse), and
+  remotes nothing was fetched from still show their folder (`repo_view/section_menu.rs`,
+  `remote_ops.rs`).*
 - [ ] M4-9 Search: commits by message, author, id, file path; content search (`-S`/`-G`);
       results highlighted in the graph.
 - [ ] M4-10 Blame view and file history (follow renames), jump to commit.
