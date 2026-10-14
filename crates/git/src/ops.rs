@@ -1032,7 +1032,7 @@ mod tests {
         r.bisect_start("HEAD", "HEAD~1").unwrap();
         assert_eq!(r.state(), RepoState::Bisect);
         let report = r.bisect_mark(BisectMark::Bad).unwrap();
-        assert!(report.contains("first bad commit"), "{report}");
+        assert!(report.contains("is the first"), "{report}");
         r.bisect_reset().unwrap();
         assert_eq!(r.state(), RepoState::Clean);
 
