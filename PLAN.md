@@ -42,14 +42,21 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [ ] M1-7 `status`: `git status --porcelain=v2 -z --branch` parser (ordinary, renamed,
       unmerged, untracked, ignored), staged vs unstaged lists, branch header.
       *`status::status` / `parse`; paths are `PathBuf` (not always UTF-8).*
-- [ ] M1-8 `diff`: commit file list (gix tree diff, renames), per-file blob diff (imara
+- [x] M1-8 `diff`: commit file list (gix tree diff, renames), per-file blob diff (imara
       histogram + word diff), unified-diff parser for `git diff` / `git diff --cached`;
-      binary and large-file detection; image file detection for image diff.
-- [ ] M1-9 Partial staging: build a patch from selected hunks or lines and apply with
+      binary and large-file detection; image file detection for image diff. *`diff::commit_files`
+      / `tree_files` (gix, `-M` renames), `diff_text` / `diff_blobs` (histogram, context,
+      `-b` / `-w`, word ranges), `parse_unified` + `worktree_diff` / `index_diff`; one
+      `TextDiff` arena for both. `git diff` output gets no word ranges yet (Follow-ups).*
+- [x] M1-9 Partial staging: build a patch from selected hunks or lines and apply with
       `git apply --cached --recount` (stage) or `--reverse` (unstage), and to the work tree
-      (discard lines). Round-trip tests.
-- [ ] M1-10 `conflict`: parse conflict markers (diff3 and zdiff3 styles) into regions;
+      (discard lines). Round-trip tests. *`stage::build_patch` / `apply_lines` /
+      `apply_hunks` for Stage, Unstage, Discard; `-U0` diffs too. New and deleted files
+      stage only whole.*
+- [x] M1-10 `conflict`: parse conflict markers (diff3 and zdiff3 styles) into regions;
       resolve per region (ours / theirs / both / custom); read `:1:` `:2:` `:3:` stages.
+      *`conflict::parse` (merge, diff3, zdiff3, any marker size, CRLF kept),
+      `ConflictFile::resolve`, `stages` (`ls-files -u`).*
 - [ ] M1-11 `rebase`: interactive rebase todo model (pick, reword, edit, squash, fixup, drop,
       reorder) written through `GIT_SEQUENCE_EDITOR`; reword messages via `GIT_EDITOR` script.
 - [ ] M1-12 `blame`: `git blame --porcelain` (incremental) parser; file history (`log --follow`).
@@ -153,3 +160,7 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - Graph width: lanes keep their slot, so busy histories get wider than git's own graph.
   Compact lanes (shift right lanes left with diagonal segments) if wide graphs look bad.
 - README (M0-3) waits for the app shell (M2) for screenshots.
+- Word highlights for `git diff` output (`parse_unified`): pair each hunk's removed and
+  added runs and reuse `diff.rs`'s word diff, as `diff_text` does.
+- Partial staging of a new (intent-to-add) or deleted file: build the patch against an
+  empty file instead of refusing a partial selection.
