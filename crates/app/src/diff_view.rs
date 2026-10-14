@@ -41,6 +41,12 @@ pub(crate) enum Content {
     Binary {
         old: Option<u64>,
         new: Option<u64>,
+        /// What the file is, from its first bytes.
+        kind: Option<&'static str>,
+    },
+    Image {
+        old: Option<crate::image_diff::ImageSide>,
+        new: Option<crate::image_diff::ImageSide>,
     },
     TooLarge {
         old: Option<u64>,
@@ -101,10 +107,19 @@ impl Content {
         prefs: &DiffPrefs,
         theme: &Arc<HighlightTheme>,
     ) -> Self {
-        match switchhead_git::diff::diff_bytes(old, new, &prefs.options()) {
+        let d = switchhead_git::diff::diff_bytes(old, new, &prefs.options());
+        if matches!(d, FileDiff::Binary { .. } | FileDiff::TooLarge { .. })
+            && let Some((old, new)) = crate::image_diff::sides(path, old, new)
+        {
+            return Content::Image { old, new };
+        }
+        match d {
             FileDiff::Binary { old_size, new_size } => Content::Binary {
                 old: old_size,
                 new: new_size,
+                kind: new
+                    .or(old)
+                    .and_then(|b| crate::image_diff::kind_of(&b[..b.len().min(64)])),
             },
             FileDiff::TooLarge { old_size, new_size } => Content::TooLarge {
                 old: old_size,
@@ -169,9 +184,16 @@ pub(crate) fn body(
 ) -> AnyElement {
     let side_by_side = loaded.prefs.side_by_side;
     match &loaded.content {
-        Content::Binary { old, new } => {
-            message(format!("Binary file ({})", sizes(*old, *new)), p.fg3)
-        }
+        Content::Binary { old, new, kind } => message(
+            format!(
+                "{} ({}{})",
+                kind.unwrap_or("Binary file"),
+                sizes(*old, *new),
+                growth(*old, *new)
+            ),
+            p.fg3,
+        ),
+        Content::Image { old, new } => crate::image_diff::render(old.as_ref(), new.as_ref(), p, cx),
         Content::TooLarge { old, new } => message(
             format!("File too large to show ({})", sizes(*old, *new)),
             p.fg3,
@@ -624,9 +646,26 @@ pub(crate) fn sizes(old: Option<u64>, new: Option<u64>) -> String {
     }
 }
 
+/// How much a file grew or shrank (" , +1.2 KB"), when both sizes are known and differ.
+pub(crate) fn growth(old: Option<u64>, new: Option<u64>) -> String {
+    match (old, new) {
+        (Some(o), Some(n)) if n > o => format!(", +{}", ui::bytes(n - o)),
+        (Some(o), Some(n)) if o > n => format!(", −{}", ui::bytes(o - n)),
+        _ => String::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn formats_growth() {
+        assert_eq!(growth(Some(1), Some(1)), "");
+        assert_eq!(growth(None, Some(5)), "");
+        assert_eq!(growth(Some(1), Some(3)), format!(", +{}", ui::bytes(2)));
+        assert_eq!(growth(Some(3), Some(1)), format!(", −{}", ui::bytes(2)));
+    }
 
     #[test]
     fn formats_sizes() {

@@ -924,13 +924,7 @@ fn local_diff(
     };
     match res {
         Ok(files) => match files.into_iter().next() {
-            Some(f) if f.binary => (
-                Content::Binary {
-                    old: None,
-                    new: None,
-                },
-                None,
-            ),
+            Some(f) if f.binary => (local_binary(repo, e, side, prefs, theme), None),
             Some(f) => (Content::text(f.diff.clone(), &e.path, None, theme), Some(f)),
             None => (
                 Content::text(Default::default(), &e.path, None, theme),
@@ -938,6 +932,35 @@ fn local_diff(
             ),
         },
         Err(err) => (Content::Failed(err.to_string()), None),
+    }
+}
+
+/// A binary file's two versions (index and work tree, or HEAD and index), for an image
+/// comparison or the binary file note.
+fn local_binary(
+    repo: &Repo,
+    e: &status::Entry,
+    side: Side,
+    prefs: &DiffPrefs,
+    theme: &std::sync::Arc<gpui_kit::component::highlighter::HighlightTheme>,
+) -> Content {
+    use switchhead_git::diff::{Source, read_at};
+    let old_path = e.orig_path.as_deref().unwrap_or(&e.path);
+    let (old, new) = match side {
+        Side::Unstaged => (
+            read_at(repo, &e.path, Source::Index),
+            Ok(std::fs::read(repo.root().join(&e.path)).ok()),
+        ),
+        Side::Staged => (
+            read_at(repo, old_path, Source::Head),
+            read_at(repo, &e.path, Source::Index),
+        ),
+    };
+    match (old, new) {
+        (Ok(old), Ok(new)) => {
+            Content::from_bytes(&e.path, old.as_deref(), new.as_deref(), prefs, theme)
+        }
+        (Err(err), _) | (_, Err(err)) => Content::Failed(err.to_string()),
     }
 }
 

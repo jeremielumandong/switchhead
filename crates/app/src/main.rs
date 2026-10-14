@@ -16,6 +16,7 @@ mod diff_model;
 mod diff_view;
 mod file_list;
 mod graph_paint;
+mod image_diff;
 mod log_file;
 mod manager;
 mod omarchy;
@@ -116,6 +117,7 @@ fn main() -> Result<()> {
             appearance::set(look, cx);
             cx.set_global(state.diff);
             cx.set_global(state.messages.clone());
+            cx.set_global(image_diff::ImageView::default());
             let theme_key = std::env::var("SWITCHHEAD_THEME")
                 .ok()
                 .or_else(|| state.theme.clone());

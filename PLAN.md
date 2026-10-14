@@ -140,7 +140,11 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   too), Ignore (the file, `*.ext`, each parent folder; untracked files), Assume Unchanged,
   Skip Worktree and Copy Path. Hidden files come from the index in process
   (`status::hidden`) and are listed under "N hidden" in the Unstaged header to show again.*
-- [ ] M3-5 Image diff (side by side, swipe, onion skin) and binary file info.
+- [x] M3-5 Image diff (side by side, swipe, onion skin) and binary file info.
+  *`image_diff.rs`: binary PNG / JPEG / GIF / WebP / BMP / TIFF / ICO files show both
+  versions with pixel size (read from the header) and file size; Swipe and Onion skin
+  follow the pointer. Other binaries show their kind (magic bytes) and size change. Local
+  binaries read HEAD / index blobs in process (`diff::read_at`). SVG stays a text diff.*
 - [ ] M3-6 Merge conflict helper: list conflicted files, choose ours/theirs, built-in 3-way
       merge editor (base/ours/theirs/result), open external merge tool, mark resolved,
       continue / abort banner for merge, rebase, cherry-pick, revert.
@@ -237,3 +241,6 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   focus change; a watcher (`notify`, pending approval) would catch them live.
 - Spell check in the commit box (M3-3): needs a dictionary crate (e.g. `spellbook`, MIT,
   Hunspell dictionaries) and a squiggle decoration on the input; ask before adding it.
+- Image diffs: hide the text-diff settings (context, inline / side by side) in the
+  toolbar, show small images at 1:1 instead of scaled up, and a checkerboard behind
+  transparent pixels.
