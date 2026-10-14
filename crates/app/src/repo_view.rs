@@ -52,6 +52,7 @@ mod section_menu;
 mod sidebar;
 mod stash_ops;
 mod tag_ops;
+mod tree;
 
 use sidebar::{Section, SideRow};
 
@@ -1103,6 +1104,9 @@ impl Render for RepoView {
             }))
             .on_action(cx.listener(|this, _: &actions::ShowReflog, window, cx| {
                 this.open_reflog("HEAD".into(), window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::BrowseFiles, window, cx| {
+                this.browse_selected(window, cx)
             }))
             .on_action(cx.listener(|this, _: &actions::StageAll, _, cx| {
                 this.changes.update(cx, |c, cx| c.stage_all(cx))

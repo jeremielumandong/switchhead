@@ -52,15 +52,15 @@ pub enum Tab {
 
 /// A file's text as one string and where each line starts.
 #[derive(Debug, Default, PartialEq, Eq)]
-struct Lines {
+pub(crate) struct Lines {
     text: String,
     starts: Vec<usize>,
     /// The longest line (sizes the horizontal scroll).
-    widest: usize,
+    pub(crate) widest: usize,
 }
 
 impl Lines {
-    fn new(text: String) -> Self {
+    pub(crate) fn new(text: String) -> Self {
         let mut starts = vec![0];
         starts.extend(text.match_indices('\n').map(|(i, _)| i + 1));
         // A final newline ends the last line rather than starting an empty one.
@@ -81,12 +81,12 @@ impl Lines {
         lines
     }
 
-    fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.starts.len()
     }
 
     /// Line `i` without its line ending.
-    fn line(&self, i: usize) -> &str {
+    pub(crate) fn line(&self, i: usize) -> &str {
         let Some(&start) = self.starts.get(i) else {
             return "";
         };

@@ -235,7 +235,8 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   File History / Blame from the commit file list's and Local Changes' menus open a view in place of the graph: history lists versions (renames shown) beside the commit's details; blame streams in with an age bar, Blame Before This Commit, Blame This Version, and Show Commit (or double-click) selects it in the graph.
 - [x] M4-11 Reflog view and restore.
   "Show Reflog" (palette, branch menu) opens HEAD's or a branch's reflog in place of the graph (`git::reflog`, read with gix; tested), with the entry's commit beside it. Reset Here (HEAD / current branch, asks), Move Branch Here (`branch -f`, asks), New Branch Here, Check Out and Show in Graph; the list reloads when refs change.
-- [ ] M4-12 Repository file tree at any commit; open / save file at revision.
+- [x] M4-12 Repository file tree at any commit; open / save file at revision.
+  "Browse Files at This Commit" (commit menu; palette "Browse Files at Commit" for the selection or HEAD) lists the commit's tree (`git::tree::list`, gix; tested) as folders with a filter, previews the selected file (text with line numbers; binary, large and submodule noted), and opens it in the system app from a temp copy, saves it elsewhere, or shows its history or blame. No syntax colors in the preview yet (same follow-up as blame).
 - [ ] M4-13 Undo: before a hard reset, discard or clean, snapshot the work tree and index
       (`git stash create`, kept under `refs/switchhead/undo/*`); ref moves undo through the
       reflog. Undo (Ctrl/Cmd+Z outside text inputs) restores the last risky action; old

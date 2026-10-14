@@ -55,6 +55,7 @@ actions!(
         AddRemote,
         FindCommits,
         ShowReflog,
+        BrowseFiles,
         ToggleActivity,
     ]
 );
@@ -97,6 +98,7 @@ pub fn commands() -> Vec<Command> {
         c("Jump to HEAD", "History", JumpToHead, true),
         c("Find Commits…", "History", FindCommits, true),
         c("Show Reflog", "History", ShowReflog, true),
+        c("Browse Files at Commit", "History", BrowseFiles, true),
         c("Show All Branches", "History", ShowAllBranches, true),
         c(
             "Show Current Branch Only",

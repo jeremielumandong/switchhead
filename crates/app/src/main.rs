@@ -32,6 +32,7 @@ mod sidebar_model;
 mod split;
 mod store;
 mod theme;
+mod tree_view;
 mod ui;
 mod workspace;
 

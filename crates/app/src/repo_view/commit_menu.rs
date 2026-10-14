@@ -314,6 +314,10 @@ pub(super) fn build_commit_menu(
         )
         .separator()
         .item(
+            PopupMenuItem::new("Browse Files at This Commit")
+                .on_click(act(Box::new(move |v, w, cx| v.open_tree(id, w, cx)))),
+        )
+        .item(
             PopupMenuItem::new("Save as Patch…")
                 .disabled(busy)
                 .on_click(act(Box::new(move |v, w, cx| v.save_patch(id, w, cx)))),
