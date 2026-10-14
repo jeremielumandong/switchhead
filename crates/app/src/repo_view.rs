@@ -12,12 +12,14 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
+use gpui_kit::AppContext as _;
+use gpui_kit::component::resizable::{ResizableState, resizable_panel, v_resizable};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, ClickEvent, Context, FocusHandle, Focusable, FontWeight, Hsla,
+    AnyElement, App, ClickEvent, Context, Entity, FocusHandle, Focusable, FontWeight, Hsla,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, ScrollStrategy, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Task, UniformListScrollHandle, Window, canvas,
-    div, px, svg, uniform_list,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Task, UniformListScrollHandle,
+    Window, canvas, div, px, svg, uniform_list,
 };
 use switchhead_git::cli::Cancel;
 use switchhead_git::graph::{GraphRows, Node, Segment};
@@ -28,6 +30,7 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use crate::actions;
 use crate::appearance::{rpx, ts};
+use crate::commit_view::{CommitView, Navigate};
 use crate::graph_paint;
 use crate::theme::{MONO, Palette, palette};
 use crate::ui;
@@ -145,13 +148,26 @@ pub struct RepoView {
     cancel: Cancel,
     collapsed: HashSet<Section>,
     side_rows: Vec<SideRow>,
+    details: Entity<CommitView>,
+    details_split: Entity<ResizableState>,
+    /// The commit the details pane shows.
+    shown: Option<Oid>,
     _walk: Option<Task<()>>,
+    _details: Subscription,
     _op: Option<Task<()>>,
 }
 
 impl RepoView {
     /// A tab for `repo`; starts loading at once.
     pub fn new(repo: Repo, cx: &mut Context<Self>) -> Self {
+        let details = cx.new(|cx| CommitView::new(repo.clone(), cx));
+        let sub = cx.subscribe(&details, |this, _, Navigate(id), cx| {
+            match this.log.row_of(id) {
+                Some(row) => this.select(row, cx),
+                None => this.pending_select = Some(*id),
+            }
+            cx.notify();
+        });
         let mut v = Self {
             state: repo.state(),
             repo,
@@ -173,7 +189,11 @@ impl RepoView {
             cancel: Cancel::default(),
             collapsed: HashSet::from([Section::Tags]),
             side_rows: Vec::new(),
+            details,
+            details_split: cx.new(|_| ResizableState::default()),
+            shown: None,
             _walk: None,
+            _details: sub,
             _op: None,
         };
         v.reload(cx);
@@ -232,7 +252,7 @@ impl RepoView {
                 }
                 let ok = this.update(cx, |v, cx| {
                     for m in msgs {
-                        v.apply(m, &mut fresh);
+                        v.apply(m, &mut fresh, cx);
                     }
                     cx.notify();
                 });
@@ -243,12 +263,17 @@ impl RepoView {
         }));
     }
 
-    fn apply(&mut self, msg: Msg, fresh: &mut bool) {
+    fn apply(&mut self, msg: Msg, fresh: &mut bool, cx: &mut Context<Self>) {
         match msg {
             Msg::Refs(refs) | Msg::Tracking(refs) => {
+                // A fresh tab starts on HEAD, like Fork.
+                if self.selected.is_none() && self.pending_select.is_none() && *fresh {
+                    self.pending_select = refs.head;
+                }
                 self.decorations = refs.decorations();
                 self.refs = *refs;
                 self.rebuild_side();
+                self.sync_details(true, cx);
             }
             Msg::Batch(b) => {
                 if std::mem::take(fresh) {
@@ -263,8 +288,9 @@ impl RepoView {
                     && let Some(row) = self.log.row_of(&id)
                 {
                     self.pending_select = None;
-                    self.select(row);
+                    self.select(row, cx);
                 }
+                self.sync_details(false, cx);
             }
             Msg::Done(res) => {
                 self.loading = false;
@@ -274,6 +300,7 @@ impl RepoView {
                     self.graph = GraphRows::new();
                     self.selected = None;
                 }
+                self.sync_details(false, cx);
                 match res {
                     Ok(stats) => {
                         tracing::debug!(
@@ -291,11 +318,26 @@ impl RepoView {
         }
     }
 
-    fn select(&mut self, row: usize) {
+    fn select(&mut self, row: usize, cx: &mut Context<Self>) {
         if row < self.log.len() {
             self.selected = Some(row);
             self.scroll.scroll_to_item(row, ScrollStrategy::Center);
+            self.sync_details(false, cx);
         }
+    }
+
+    /// Point the details pane at the selected commit. `labels`: refs changed, so send its
+    /// labels even when the commit did not change.
+    fn sync_details(&mut self, labels: bool, cx: &mut Context<Self>) {
+        let id = self.selected.map(|i| self.log.id(i));
+        if id == self.shown && !labels {
+            return;
+        }
+        self.shown = id;
+        let ls = id
+            .and_then(|id| self.decorations.get(&id).cloned())
+            .unwrap_or_default();
+        self.details.update(cx, |d, cx| d.show(id, ls, cx));
     }
 
     fn move_selection(&mut self, delta: isize, cx: &mut Context<Self>) {
@@ -307,6 +349,7 @@ impl RepoView {
         let next = (cur + delta).clamp(0, n as isize - 1) as usize;
         self.selected = Some(next);
         self.scroll.scroll_to_item(next, ScrollStrategy::Nearest);
+        self.sync_details(false, cx);
         cx.notify();
     }
 
@@ -314,7 +357,7 @@ impl RepoView {
     pub fn jump_to_head(&mut self, cx: &mut Context<Self>) {
         if let Some(head) = self.refs.head {
             match self.log.row_of(&head) {
-                Some(row) => self.select(row),
+                Some(row) => self.select(row, cx),
                 None => self.pending_select = Some(head),
             }
             cx.notify();
@@ -633,7 +676,7 @@ impl RepoView {
                             this.set_scope(scope, cx);
                         } else {
                             match this.log.row_of(&id) {
-                                Some(row) => this.select(row),
+                                Some(row) => this.select(row, cx),
                                 None => this.pending_select = Some(id),
                             }
                             cx.notify();
@@ -818,6 +861,7 @@ impl RepoView {
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.selected = Some(i);
                 window.focus(&this.focus, cx);
+                this.sync_details(false, cx);
                 cx.notify();
             }))
             .child(graph)
@@ -909,8 +953,7 @@ impl RepoView {
             .into_any_element()
         };
         div()
-            .flex_1()
-            .min_w_0()
+            .size_full()
             .flex()
             .flex_col()
             .bg(p.surface)
@@ -958,8 +1001,9 @@ impl Focusable for RepoView {
 }
 
 impl Render for RepoView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
+        let rem = window.rem_size();
         div()
             .id("repo")
             .key_context("Graph")
@@ -986,11 +1030,28 @@ impl Render for RepoView {
             }))
             .on_action(cx.listener(|this, _: &actions::JumpToHead, _, cx| this.jump_to_head(cx)))
             .when(self.sidebar, |d| d.child(self.render_sidebar(&p, cx)))
-            .child(self.render_graph(&p, cx))
+            .child(
+                div().flex_1().min_w_0().h_full().child(
+                    v_resizable("graph-details")
+                        .with_state(&self.details_split)
+                        .child(
+                            resizable_panel()
+                                .size_range(rem * (120. / 13.)..gpui_kit::Pixels::MAX)
+                                .child(self.render_graph(&p, cx)),
+                        )
+                        .child(
+                            resizable_panel()
+                                .size(rem * (400. / 13.))
+                                .size_range(rem * (140. / 13.)..gpui_kit::Pixels::MAX)
+                                .child(self.details.clone()),
+                        ),
+                ),
+            )
     }
 }
 
-fn label_chip(l: &Label, p: &Palette) -> AnyElement {
+/// A ref label chip (graph rows, commit details).
+pub(crate) fn label_chip(l: &Label, p: &Palette) -> AnyElement {
     let (fg, bg): (Hsla, Option<Hsla>) = match l.kind {
         LabelKind::Head => (p.deleted, None),
         LabelKind::CurrentBranch => (p.acc_fg, Some(p.acc)),

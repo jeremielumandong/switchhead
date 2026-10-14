@@ -64,6 +64,67 @@ pub struct State {
     pub theme: Option<String>,
     /// Zoom and editor font.
     pub appearance: AppearanceSettings,
+    /// Diff view settings.
+    pub diff: DiffPrefs,
+}
+
+/// How file diffs are shown (shared by every tab; a GPUI global while the app runs).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DiffPrefs {
+    /// Old and new side by side instead of one inline column.
+    pub side_by_side: bool,
+    /// Whitespace handling.
+    pub whitespace: WhitespacePref,
+    /// Unchanged lines around each change.
+    pub context: u32,
+    /// Changed files as a folder tree instead of a flat list.
+    pub tree: bool,
+}
+
+impl Default for DiffPrefs {
+    fn default() -> Self {
+        Self {
+            side_by_side: false,
+            whitespace: WhitespacePref::Show,
+            context: 3,
+            tree: false,
+        }
+    }
+}
+
+impl gpui_kit::Global for DiffPrefs {}
+
+impl DiffPrefs {
+    /// Most context lines offered.
+    pub const MAX_CONTEXT: u32 = 25;
+
+    /// The git engine's options for these settings.
+    pub fn options(&self) -> switchhead_git::diff::DiffOptions {
+        use switchhead_git::diff::Whitespace;
+        switchhead_git::diff::DiffOptions {
+            context: self.context.min(Self::MAX_CONTEXT),
+            whitespace: match self.whitespace {
+                WhitespacePref::Show => Whitespace::Exact,
+                WhitespacePref::IgnoreChanges => Whitespace::IgnoreChanges,
+                WhitespacePref::IgnoreAll => Whitespace::IgnoreAll,
+            },
+            words: true,
+        }
+    }
+}
+
+/// Whitespace handling in diffs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WhitespacePref {
+    /// Show every change.
+    #[default]
+    Show,
+    /// Ignore changes in the amount of whitespace (`-b`).
+    IgnoreChanges,
+    /// Ignore all whitespace (`-w`).
+    IgnoreAll,
 }
 
 impl State {
@@ -131,6 +192,8 @@ mod tests {
         s.touch(Path::new("/a"), "a", 1);
         s.theme = Some("nord".into());
         s.open_tabs = vec!["/a".into()];
+        s.diff.side_by_side = true;
+        s.diff.whitespace = WhitespacePref::IgnoreAll;
         s.save(&file).unwrap();
         assert_eq!(State::load(&file), s);
         std::fs::write(&file, "{ not json").unwrap();

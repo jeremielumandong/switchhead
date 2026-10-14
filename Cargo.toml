@@ -16,7 +16,7 @@ switchhead-git = { path = "crates/git" }
 
 # UI: the same facade and versions as Switchyard (gpui-pre =0.3.8 + gpui-component 0.7.1,
 # kept in lockstep). See docs/DECISIONS.md.
-gpui-kit = { version = "=0.7.1" }
+gpui-kit = { version = "=0.7.1", features = ["tree-sitter-languages"] }
 
 # Git reads (log, refs, status, diff). Writes go through the system `git` binary.
 gix = { version = "0.89", default-features = false, features = [
