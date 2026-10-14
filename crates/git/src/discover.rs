@@ -152,14 +152,11 @@ pub fn scan(root: &Path, max_depth: usize) -> Vec<Found> {
                             }
                             let path = e.path();
                             if let Some(linked) = git_marker(&path) {
-                                found
-                                    .lock()
-                                    .unwrap_or_else(|e| e.into_inner())
-                                    .push(Found {
-                                        rel: rel_of(root, &path),
-                                        path,
-                                        linked,
-                                    });
+                                found.lock().unwrap_or_else(|e| e.into_inner()).push(Found {
+                                    rel: rel_of(root, &path),
+                                    path,
+                                    linked,
+                                });
                             } else if depth + 1 < max_depth {
                                 children.push((path, depth + 1));
                             }
@@ -179,7 +176,7 @@ pub fn scan(root: &Path, max_depth: usize) -> Vec<Found> {
     let mut out = Arc::try_unwrap(found)
         .map(|m| m.into_inner().unwrap_or_else(|e| e.into_inner()))
         .unwrap_or_default();
-    out.sort_by(|a, b| a.rel.to_lowercase().cmp(&b.rel.to_lowercase()));
+    out.sort_by_key(|a| a.rel.to_lowercase());
     out
 }
 
@@ -218,7 +215,10 @@ mod tests {
         let root = t.path().canonicalize().unwrap();
         mkrepo(&root.join("r"));
         std::fs::create_dir_all(root.join("r/src/deep")).unwrap();
-        assert_eq!(classify(&root.join("r/src/deep")), Target::Repo(root.join("r")));
+        assert_eq!(
+            classify(&root.join("r/src/deep")),
+            Target::Repo(root.join("r"))
+        );
         assert_eq!(classify(&root), Target::Folder(root.clone()));
     }
 }
