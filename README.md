@@ -8,6 +8,8 @@ history is still being read, and does everything that changes a repository throu
 `git`, so hooks, credential helpers, SSH agents, signing and LFS behave exactly like the
 command line.
 
+**[Website](https://jeremielumandong.github.io/switchhead/)** · [Plan](PLAN.md)
+
 ![Commit graph in the dark theme](docs/screenshots/commit-graph-dark.png)
 
 > switchhead is in active development. Everything described under **Features** works

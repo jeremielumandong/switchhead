@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>switchhead</title>
+<meta name="description" content="A very fast, native Git client for Linux, macOS and Windows, written in Rust on GPUI. Opens big repositories in milliseconds, streams the commit graph, and runs every change through your own git.">
+<meta name="theme-color" content="#0e0e10">
+<meta property="og:title" content="switchhead: a very fast, native Git client">
+<meta property="og:description" content="Fork-class Git GUI in Rust on GPUI. First graph rows in 94 ms on git/git; every write through your own git.">
+<meta property="og:image" content="screenshots/commit-graph-dark.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="preload" href="fonts/Geist-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="stylesheet" href="style.css">
+<script>
+  // Apply the saved theme before first paint so the page never flashes.
+  try { var t = localStorage.getItem('switchhead-site-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+</head>
+<body>
+
+<header class="nav" id="nav">
+  <div class="nav-in">
+    <a class="brand" href="#top" aria-label="switchhead home">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9"/><path d="M12 12v3"/></svg>
+      <span>switchhead</span>
+    </a>
+    <span class="chip mono">v0.0.1 · in development</span>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#demo">Demo</a>
+      <a href="#tour">Tour</a>
+      <a href="#speed">Speed</a>
+      <a href="#features">Features</a>
+      <a href="#assistant">AI</a>
+      <a href="#themes">Themes</a>
+      <a href="#build">Build</a>
+      <a class="gh" href="https://github.com/jeremielumandong/switchhead">GitHub ↗</a>
+    </nav>
+    <button class="theme-pill" id="themePill" type="button" aria-label="Pick a theme">
+      <span class="dots" id="themeDots"></span>
+      <span id="themePillName">switchhead Dark</span>
+      <kbd>T</kbd>
+    </button>
+  </div>
+</header>
+
+<main>
+
+<!-- Hero -->
+<section id="top" class="wrap hero">
+  <p class="eyebrow"><span class="pulse"></span>Native · Rust on GPUI · macOS / Windows / Linux</p>
+  <h1>Every branch,<br>drawn before<br>you blink.</h1>
+  <p class="lede">A very fast, native Git client. switchhead reads history in process with gitoxide, streams the commit graph while it is still being read, and runs every change through <em>your own</em> <code>git</code>, so hooks, credential helpers, SSH agents, signing and LFS behave exactly like the command line.</p>
+
+  <div class="install" id="install">
+    <div class="install-tabs" role="tablist">
+      <button role="tab" data-os="linux" class="on">Linux</button>
+      <button role="tab" data-os="mac">macOS</button>
+      <button role="tab" data-os="win">Windows</button>
+    </div>
+    <div class="install-body">
+      <pre class="mono" id="installCmd"></pre>
+      <button class="btn-copy" id="copyInstall" type="button">Copy</button>
+    </div>
+    <p class="install-note" id="installNote"></p>
+  </div>
+
+  <dl class="stats">
+    <div><dt class="mono">94<small>ms</small></dt><dd>first graph rows on git/git, 85,000+ commits</dd></div>
+    <div><dt class="mono">1.3<small>s</small></dt><dd>whole history laid out, about 2× faster than <code>git log --all --date-order</code></dd></div>
+    <div><dt class="mono">0</dt><dd>process spawns on hot paths: log, graph, refs and diffs read in process</dd></div>
+    <div><dt class="mono">1</dt><dd>Rust binary, GPU-rendered. No Electron, no web view.</dd></div>
+  </dl>
+</section>
+
+<!-- Live sample -->
+<section id="demo" class="wrap-wide demo">
+  <div class="demo-head">
+    <span class="eyebrow-sm mono">Live sample · themed by the picker · click a commit</span>
+    <div class="theme-chips" id="themeChips"></div>
+  </div>
+
+  <div class="app" id="app" aria-label="Interactive replica of the switchhead window">
+    <div class="app-title">
+      <span class="app-logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9"/><path d="M12 12v3"/></svg>switchhead</span>
+      <span class="app-tab"><svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg>Repositories</span>
+      <span class="app-tab on"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M6 8.5v7M18 8.5c0 5-12 3-12 7"/></svg>switchhead <span class="mono dim">main</span><i>×</i></span>
+      <span class="app-tab"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M6 8.5v7M18 8.5c0 5-12 3-12 7"/></svg>switchyard <span class="mono dim">main</span><i>×</i></span>
+      <span class="app-plus">+</span>
+    </div>
+    <div class="app-tool">
+      <span class="tb"><svg viewBox="0 0 24 24"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg>Fetch</span>
+      <span class="tb"><svg viewBox="0 0 24 24"><path d="M12 4v15m-6-6 6 6 6-6"/></svg>Pull</span>
+      <span class="tb"><svg viewBox="0 0 24 24"><path d="M12 20V5m-6 6 6-6 6 6"/></svg>Push</span>
+      <span class="tb-sep"></span>
+      <span class="tb"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10h14V9M10 13h4"/></svg>Stash</span>
+      <span class="tb"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10h14V9M12 18v-6m-3 3 3-3 3 3"/></svg>Pop</span>
+      <span class="tb"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M6 8.5v7M18 8.5c0 5-12 3-12 7"/></svg>Branch</span>
+      <span class="tb-gap"></span>
+      <span class="tb"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.6-4.5L3 9m0-5v5h5M4 13a8 8 0 0 0 14.6 4.5L21 15m0 5v-5h-5"/></svg>Refresh</span>
+      <span class="tb off"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg>Terminal</span>
+      <span class="tb off"><svg viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 4v4M9 13v2M15 13v2"/></svg>Assistant</span>
+    </div>
+    <div class="app-body">
+      <div class="app-rail">
+        <span><svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg></span>
+        <span class="on"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M6 8.5v7M18 8.5c0 5-12 3-12 7"/></svg></span>
+        <span><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg></span>
+        <span><svg viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 4v4M9 13v2M15 13v2"/></svg></span>
+      </div>
+      <aside class="app-side">
+        <div class="side-repo">switchhead</div>
+        <div class="side-item"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M10 12h6M13 9v6M10 18h6"/></svg>Local Changes <b class="badge">3</b></div>
+        <div class="side-item on"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M3 12h6M15 12h6"/></svg>All Commits</div>
+        <div class="side-filter">Filter</div>
+        <div class="side-tree" id="sideTree"></div>
+      </aside>
+      <div class="app-main">
+        <div class="graph-head">
+          <span class="gh-graph">Graph</span>
+          <span class="gh-desc">Description</span>
+          <span class="seg"><b>All</b><span>Current</span></span>
+          <span class="gh-head">Head</span>
+          <span class="gh-author">Author</span>
+          <span class="gh-date">Date</span>
+          <span class="gh-id">Commit</span>
+        </div>
+        <div class="graph-rows" id="graphRows" role="listbox" aria-label="Commits"></div>
+        <div class="details">
+          <div class="det-left" id="detLeft"></div>
+          <div class="det-diff" id="detDiff"></div>
+        </div>
+      </div>
+    </div>
+    <div class="app-status">
+      <span class="st-branch"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M6 8.5v7M18 8.5c0 5-12 3-12 7"/></svg>main</span>
+      <span class="st-gap"></span>
+      <span class="mono" id="stCount">0 commits</span>
+      <span class="mono dim" id="stFirst">reading…</span>
+      <span class="mono dim st-path">~/code/switchhead</span>
+    </div>
+  </div>
+  <p class="caption">A replica built from the app's own palettes and lane colors. The rows stream in batches like the real log walk; use ↑ ↓ to move.</p>
+</section>
+
+<!-- Speaks git -->
+<section class="wrap strip">
+  <span class="eyebrow-sm mono">Works with</span>
+  <ul class="pills">
+    <li>Your git config</li><li>Hooks</li><li>Credential helpers</li><li>SSH agents</li><li>GPG &amp; SSH signing</li><li>Git LFS</li><li>Submodules</li><li>Worktrees</li><li>Shallow clones</li><li>fsmonitor</li><li>commit.template</li><li>merge.tool</li>
+  </ul>
+</section>
+
+<!-- Tour -->
+<section id="tour" class="wrap sec">
+  <div class="sec-head split">
+    <h2>A tour of the graph.</h2>
+    <p>Twenty screens from the app as it is today, from the commit graph to the reflog. Click a shot to see it full size.</p>
+  </div>
+  <div class="tour">
+    <ol class="tour-list" id="tourList"></ol>
+    <figure class="tour-view">
+      <button class="tour-img" id="tourImgBtn" type="button" aria-label="Open screenshot full size"><img id="tourImg" alt="" src="screenshots/commit-graph-dark.png"></button>
+      <figcaption id="tourCap"></figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- Architecture -->
+<section class="wrap sec" id="how">
+  <p class="eyebrow">How it stays fast</p>
+  <h2>Reads in process.<br>Writes through <span class="mono">git</span>.</h2>
+  <p class="sub">The two halves of a Git client want opposite things. Reading history wants raw speed; changing a repository wants to behave exactly like your terminal. switchhead does both on purpose.</p>
+  <div class="arch">
+    <div class="arch-card">
+      <div class="arch-k mono">gitoxide · in process</div>
+      <h3>Read</h3>
+      <ul>
+        <li>Log walk in date order with the commit-graph file, sent in batches with their graph rows</li>
+        <li>Refs, commit diffs and blob diffs (histogram, word-level highlights)</li>
+        <li>Columnar commit store: ids, times, interned authors, summaries in one arena</li>
+        <li>Pure, incremental lane layout, unit-tested on synthetic histories</li>
+      </ul>
+    </div>
+    <div class="arch-mid" aria-hidden="true">
+      <svg viewBox="0 0 120 260" class="arch-svg">
+        <path d="M60 10 V250" pathLength="1" class="ln l0"/>
+        <path d="M60 60 C60 90 100 90 100 120 V160 C100 190 60 190 60 220" pathLength="1" class="ln l1"/>
+        <path d="M60 100 C60 120 20 120 20 150 V170 C20 190 60 190 60 205" pathLength="1" class="ln l2"/>
+        <circle cx="60" cy="30" r="7" class="nd n0"/><circle cx="60" cy="60" r="7" class="nd n0"/>
+        <circle cx="100" cy="135" r="7" class="nd n1"/><circle cx="20" cy="160" r="7" class="nd n2"/>
+        <circle cx="60" cy="220" r="7" class="nd n0"/>
+      </svg>
+    </div>
+    <div class="arch-card">
+      <div class="arch-k mono">system git · child process</div>
+      <h3>Write</h3>
+      <ul>
+        <li>Commit, stage, checkout, merge, rebase, push, stash, tag: all through <code>git</code></li>
+        <li>Status with <code>--porcelain=v2</code>: fsmonitor and the untracked cache</li>
+        <li>Progress streamed to the status bar; cancel kills git's whole process group</li>
+        <li>Your hooks, signing, LFS and credential prompts behave like the command line</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- Speed -->
+<section id="speed" class="wrap sec">
+  <div class="sec-head split">
+    <div>
+      <p class="eyebrow">Performance budgets</p>
+      <h2>Fast where it matters.</h2>
+    </div>
+    <p>Every git operation logs its time, and the status bar shows how long the first rows took. These are the budgets the app is built against.</p>
+  </div>
+
+  <div class="race" id="race">
+    <div class="race-head mono"><span>Whole history of git/git, all refs, date order</span><button type="button" id="raceBtn">Run again ↻</button></div>
+    <div class="race-row"><span class="race-name">switchhead</span><div class="race-track"><div class="race-bar acc" data-ms="1300"></div></div><span class="race-ms mono" data-ms="1300">1.3 s</span></div>
+    <div class="race-row"><span class="race-name mono">git log</span><div class="race-track"><div class="race-bar muted" data-ms="2600"></div></div><span class="race-ms mono" data-ms="2600">≈2.6 s</span></div>
+    <p class="race-note">First rows appear in 94 ms; the list is usable long before the walk finishes. Without a commit-graph file gix needs 1.9 s before the first batch, so switchhead uses it whenever git wrote one.</p>
+  </div>
+
+  <div class="budgets">
+    <div><b class="mono">&lt; 300 ms</b><span>cold start</span></div>
+    <div><b class="mono">&lt; 100 ms</b><span>open a repo to first graph rows</span></div>
+    <div><b class="mono">&lt; 500 ms</b><span>first rows on a 1M-commit repo</span></div>
+    <div><b class="mono">&lt; 30 ms</b><span>switch commits, file list shown</span></div>
+    <div><b class="mono">&lt; 50 ms</b><span>a typical file diff</span></div>
+    <div><b class="mono">&lt; 300 ms</b><span>status of a 100k-file work tree</span></div>
+    <div><b class="mono">&lt; 16 ms</b><span>switch repo tabs, state stays in memory</span></div>
+    <div><b class="mono">&lt; 200 ms</b><span>scan a folder of ~1,000 directories</span></div>
+  </div>
+</section>
+
+<!-- Features -->
+<section id="features" class="wrap sec">
+  <p class="eyebrow">Fork-class</p>
+  <h2>Everything you reach for,<br>none of the waiting.</h2>
+  <p class="sub">Built feature by feature against Fork's checklist. Everything below works today.</p>
+  <div class="feat-grid" id="featGrid"></div>
+</section>
+
+<!-- Staging spotlight -->
+<section class="wrap sec">
+  <div class="spot">
+    <div class="spot-text">
+      <p class="eyebrow">Local changes</p>
+      <h2>Stage a line,<br>not a guess.</h2>
+      <p>Stage, unstage or discard whole files, single hunks, or individual lines picked in the diff. The commit box counts your subject (amber past 50, red past 72), loads the last message on Amend and restores your draft when you turn it off. When a hook says no, its full output sits right under the box.</p>
+      <ul class="ticks">
+        <li>Space or Enter stages, Tab switches lists, Ctrl/Cmd+Enter commits</li>
+        <li>Ignore a file, its extension or a folder in one click</li>
+        <li>Assume-unchanged and skip-worktree from the context menu</li>
+        <li>Destructive actions always ask first</li>
+      </ul>
+    </div>
+    <div class="spot-shots">
+      <img src="screenshots/line-staging.png" alt="Picking lines to stage in the diff" loading="lazy" data-zoom>
+      <img src="screenshots/commit-hook-error.png" alt="A pre-commit hook's error output under the commit box" loading="lazy" data-zoom>
+    </div>
+  </div>
+</section>
+
+<section class="wrap sec">
+  <div class="trio">
+    <figure><img src="screenshots/merge-helper.png" alt="Three-way merge conflict helper" loading="lazy" data-zoom><figcaption><b>Conflicts, card by card.</b> Ours, base and theirs for each region; take a side, both, or edit the result, then Mark Resolved.</figcaption></figure>
+    <figure><img src="screenshots/rebase-editor.png" alt="Interactive rebase editor" loading="lazy" data-zoom><figcaption><b>Rebase by dragging.</b> Reorder with the mouse or Alt+↑/↓, and press P R E S F D to pick, reword, edit, squash, fixup or drop.</figcaption></figure>
+    <figure><img src="screenshots/image-diff-swipe.png" alt="Image diff in swipe mode" loading="lazy" data-zoom><figcaption><b>Images that diff.</b> Side by side, swipe, or an onion skin that follows the pointer, with pixel and file sizes.</figcaption></figure>
+  </div>
+</section>
+
+<!-- Assistant -->
+<section id="assistant" class="wrap sec">
+  <div class="ai">
+    <div class="ai-text">
+      <p class="eyebrow">Coming next · AI assistant</p>
+      <h2>Bring the coding CLI<br>you already use.</h2>
+      <p>Claude Code, Codex CLI, Gemini CLI or your own. It writes commit messages from the staged diff, proposes conflict resolutions, explains git commands and reviews branches. You review and apply every proposal.</p>
+      <h4>Safety lives in the server</h4>
+      <ul class="safety">
+        <li>The CLI runs in a private, empty temp folder, never in your repository</li>
+        <li>Its own shell and file-edit tools are turned off</li>
+        <li>Its only tools are switchhead's read-only git MCP server, scoped to one repository</li>
+        <li>It returns proposals; the app applies them only after you review them</li>
+        <li>switchhead never reads, stores or proxies a CLI's credentials</li>
+      </ul>
+    </div>
+    <div class="ai-demo">
+      <div class="term">
+        <div class="term-bar"><i></i><i></i><i></i><span class="mono">Generate commit message</span></div>
+        <div class="term-body mono" id="aiTerm"></div>
+      </div>
+      <div class="mcp">
+        <span class="eyebrow-sm mono">Read-only MCP tools</span>
+        <div class="tags mono"><span>status</span><span>log</span><span>show</span><span>diff</span><span>branches</span><span>blame</span><span>conflicts</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Themes -->
+<section id="themes" class="wrap sec">
+  <div class="sec-head split">
+    <div>
+      <p class="eyebrow">Themes · Follow Omarchy</p>
+      <h2>Ten themes.<br>Your desktop's, too.</h2>
+    </div>
+    <p>The same design system as Switchyard. Pick one below and the whole page and the sample above follow it. On Linux, <b>Follow Omarchy</b> reads your active Omarchy theme and rebuilds the palette, every text color kept readable at 7:1.</p>
+  </div>
+  <div class="theme-grid" id="themeGrid"></div>
+  <p class="theme-now">You're looking at <b id="themeNow">switchhead Dark</b>. Zoom the whole UI with <kbd>Ctrl</kbd> <kbd>+</kbd> <kbd>−</kbd> <kbd>0</kbd>.</p>
+</section>
+
+<!-- Keyboard -->
+<section id="keys" class="wrap sec">
+  <div class="sec-head split">
+    <h2>Keyboard first.</h2>
+    <div class="seg big" id="keyOs" role="tablist"><button data-os="mac" class="on">macOS</button><button data-os="pc">Windows / Linux</button></div>
+  </div>
+  <div class="keys" id="keyGrid"></div>
+</section>
+
+<!-- Status -->
+<section id="status" class="wrap sec">
+  <div class="status">
+    <div>
+      <p class="eyebrow">Status</p>
+      <h2>In active development.</h2>
+      <p class="sub">Everything above the "coming next" line works today. The rest is tracked in <a href="https://github.com/jeremielumandong/switchhead/blob/main/PLAN.md">PLAN.md</a>.</p>
+    </div>
+    <dl class="road">
+      <div><dt class="mono">Assistant</dt><dd>Commit messages, conflict resolutions, git command help and branch reviews through a read-only git MCP server.</dd></div>
+      <div><dt class="mono">History</dt><dd>File tree at any revision, open or save a file at a commit, and undo for hard resets, discards and cleans.</dd></div>
+      <div><dt class="mono">Advanced</dt><dd>Git LFS, submodule and worktree management, git-flow, custom commands, bisect, a diff minimap and identity profiles.</dd></div>
+      <div><dt class="mono">Hosting</dt><dd>GitHub, GitLab, Bitbucket and Azure DevOps accounts, clone from an account and pull requests.</dd></div>
+      <div><dt class="mono">Release</dt><dd>AppImage, macOS and Windows installers, and performance CI on git/git and linux.</dd></div>
+    </dl>
+  </div>
+</section>
+
+<!-- Build -->
+<section id="build" class="wrap sec">
+  <h2>Build from source.</h2>
+  <p class="sub">Rust 1.97 or newer (pinned in <code>rust-toolchain.toml</code>) and <code>git</code> on your <code>PATH</code>.</p>
+  <div class="build">
+    <div class="code-card"><div class="cc-title">Linux dependencies (Debian / Ubuntu)</div><pre class="mono"><span>$</span> sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+    libxcb1-dev libvulkan-dev libfontconfig-dev libfreetype-dev libssl-dev pkg-config</pre></div>
+    <div class="code-card"><div class="cc-title">Run</div><pre class="mono"><span>$</span> git clone https://github.com/jeremielumandong/switchhead
+<span>$</span> cd switchhead
+<span>$</span> cargo run --release -p switchhead-app -- ~/code</pre></div>
+    <div class="code-card"><div class="cc-title">Checks</div><pre class="mono"><span>$</span> cargo fmt --all
+<span>$</span> cargo clippy --workspace --all-targets -- -D warnings
+<span>$</span> cargo test --workspace</pre></div>
+  </div>
+  <p class="foot-note">Pass a repository to open it, or a plain folder to scan it for every repository inside.</p>
+</section>
+
+</main>
+
+<footer class="wrap footer">
+  <div class="foot-big">switchhead</div>
+  <div class="foot-row">
+    <span>Written in Rust on GPUI and gpui-component · MIT · a sibling of <a href="https://github.com/jeremielumandong/switchyard">Switchyard</a></span>
+    <nav>
+      <a href="https://github.com/jeremielumandong/switchhead">GitHub</a>
+      <a href="https://github.com/jeremielumandong/switchhead/blob/main/PLAN.md">Plan</a>
+      <a href="https://github.com/GitoxideLabs/gitoxide">gitoxide</a>
+      <a href="https://www.gpui.rs/">GPUI</a>
+    </nav>
+  </div>
+</footer>
+
+<!-- Theme dialog -->
+<div class="modal" id="themeModal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="themeModalTitle">
+    <div class="modal-head"><h3 id="themeModalTitle">Pick a theme. Everything follows.</h3><button type="button" class="x" data-close>esc</button></div>
+    <div class="theme-grid small" id="themeGridModal"></div>
+  </div>
+</div>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" hidden>
+  <button type="button" class="lb-x" data-close aria-label="Close">esc</button>
+  <button type="button" class="lb-nav prev" id="lbPrev" aria-label="Previous">‹</button>
+  <figure><img id="lbImg" alt=""><figcaption id="lbCap"></figcaption></figure>
+  <button type="button" class="lb-nav next" id="lbNext" aria-label="Next">›</button>
+</div>
+
+<script src="sample-history.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
