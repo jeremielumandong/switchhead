@@ -298,6 +298,81 @@ pub fn language_for(path: &std::path::Path) -> Option<&'static str> {
     })
 }
 
+/// What a minimap mark stands for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MarkKind {
+    Added,
+    Removed,
+    /// Removed lines replaced by added ones.
+    Changed,
+}
+
+/// A run of rows `start..end` of one kind, for the diff minimap.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Mark {
+    pub start: u32,
+    pub end: u32,
+    pub kind: MarkKind,
+}
+
+/// Minimap marks for the inline layout: a removed run directly followed by an added
+/// run is one changed mark.
+pub fn inline_marks(d: &TextDiff, rows: &[Row]) -> Vec<Mark> {
+    let kinds = rows.iter().map(|r| match *r {
+        Row::Line(i) => match d.line(i as usize).kind {
+            LineKind::Added => Some(MarkKind::Added),
+            LineKind::Removed => Some(MarkKind::Removed),
+            LineKind::Context => None,
+        },
+        Row::Hunk(_) => None,
+    });
+    let mut out: Vec<Mark> = Vec::new();
+    for m in runs(kinds) {
+        match out.last_mut() {
+            Some(prev)
+                if prev.kind == MarkKind::Removed
+                    && m.kind == MarkKind::Added
+                    && prev.end == m.start =>
+            {
+                prev.end = m.end;
+                prev.kind = MarkKind::Changed;
+            }
+            _ => out.push(m),
+        }
+    }
+    out
+}
+
+/// Minimap marks for the side-by-side layout: a row with a line on both sides that
+/// differ is changed.
+pub fn sbs_marks(d: &TextDiff, rows: &[SbsRow]) -> Vec<Mark> {
+    let changed = |i: u32| d.line(i as usize).kind != LineKind::Context;
+    runs(rows.iter().map(|r| match *r {
+        SbsRow::Pair(Some(o), Some(n)) if changed(o) || changed(n) => Some(MarkKind::Changed),
+        SbsRow::Pair(Some(o), None) if changed(o) => Some(MarkKind::Removed),
+        SbsRow::Pair(None, Some(n)) if changed(n) => Some(MarkKind::Added),
+        _ => None,
+    }))
+}
+
+/// Runs of equal, present kinds.
+fn runs(kinds: impl Iterator<Item = Option<MarkKind>>) -> Vec<Mark> {
+    let mut out: Vec<Mark> = Vec::new();
+    for (i, k) in kinds.enumerate() {
+        let Some(kind) = k else { continue };
+        let i = i as u32;
+        match out.last_mut() {
+            Some(m) if m.kind == kind && m.end == i => m.end = i + 1,
+            _ => out.push(Mark {
+                start: i,
+                end: i + 1,
+                kind,
+            }),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,6 +380,31 @@ mod tests {
 
     fn diff(old: &str, new: &str) -> TextDiff {
         diff_text(old, new, &DiffOptions::default())
+    }
+
+    #[test]
+    fn minimap_marks_runs_of_changes() {
+        let d = diff("a\nb\nc\nd\ne\n", "a\nB\nB2\nc\ne\nf\n");
+        // Lines: a, -b, +B, +B2, c, -d, e, +f
+        let mark = |start, end, kind| Mark { start, end, kind };
+        assert_eq!(
+            inline_marks(&d, &inline_rows(&d)),
+            vec![
+                mark(2, 5, MarkKind::Changed),
+                mark(6, 7, MarkKind::Removed),
+                mark(8, 9, MarkKind::Added),
+            ]
+        );
+        // Rows: @@, a, b|B, -|B2, c, d|-, e, -|f
+        assert_eq!(
+            sbs_marks(&d, &sbs_rows(&d)),
+            vec![
+                mark(2, 3, MarkKind::Changed),
+                mark(3, 4, MarkKind::Added),
+                mark(5, 6, MarkKind::Removed),
+                mark(7, 8, MarkKind::Added),
+            ]
+        );
     }
 
     #[test]

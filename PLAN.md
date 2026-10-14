@@ -154,8 +154,9 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   `merge.tool`, Mark Resolved (asks if markers remain). Binary and delete conflicts offer
   whole-file choices (Keep / Delete). The repo banner shows the operation, conflict count,
   Abort (confirmed), Skip and Continue. CRLF files and a MERGE_MSG prefill: Follow-ups.*
-- [ ] M3-7 Diff minimap: a narrow strip beside the diff marking added / removed / changed
+- [x] M3-7 Diff minimap: a narrow strip beside the diff marking added / removed / changed
       lines over the whole file; click or drag to jump. Commit and local-changes diffs.
+  A strip beside every diff (commit and Local Changes, inline and side by side) marks added, removed and changed rows (`diff_model::inline_marks` / `sbs_marks`; tested) over the whole diff, with the visible part shaded; click or drag scrolls there (`minimap.rs`). It spans the diff's hunks, not unchanged parts of the file outside them.
 - [ ] M3-8 Git identity profiles: saved name / email / signing key sets, one picked per repo
       (written to the repo's local config); current identity shown in the commit box.
 
