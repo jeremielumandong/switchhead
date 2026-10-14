@@ -16,6 +16,7 @@ mod commit_view;
 mod diff_model;
 mod diff_view;
 mod file_list;
+mod file_view;
 mod graph_paint;
 mod image_diff;
 mod log_file;

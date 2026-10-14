@@ -15,13 +15,15 @@ use std::sync::Arc;
 
 use gpui_kit::AppContext as _;
 use gpui_kit::component::highlighter::HighlightTheme;
+use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::resizable::{ResizableState, h_resizable, resizable_panel};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    FontWeight, InteractiveElement as _, IntoElement, ParentElement as _, Render, ScrollStrategy,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task,
-    UniformListScrollHandle, Window, div, px, uniform_list,
+    FontWeight, InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent,
+    ParentElement as _, Render, ScrollStrategy, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Subscription, Task, UniformListScrollHandle, WeakEntity, Window, div, px,
+    uniform_list,
 };
 use switchhead_git::commit::{self, CommitInfo};
 use switchhead_git::diff::{self, FileChange};
@@ -41,6 +43,16 @@ use crate::ui;
 /// The user clicked a parent: select that commit in the graph.
 pub struct Navigate(pub Oid);
 
+/// The user asked for a file's history or blame from the file list's menu.
+pub struct OpenFile {
+    /// The file's path in `rev`.
+    pub path: PathBuf,
+    /// The commit shown.
+    pub rev: Oid,
+    /// Blame (else the file's history).
+    pub blame: bool,
+}
+
 /// The details pane.
 pub struct CommitView {
     repo: Repo,
@@ -51,6 +63,8 @@ pub struct CommitView {
     rows: Vec<FileRow>,
     collapsed: HashSet<PathBuf>,
     selected_file: Option<usize>,
+    /// The file to select when the next commit's files arrive.
+    prefer: Option<PathBuf>,
     loaded: Option<Rc<Loaded>>,
     loading: bool,
     diff_loading: bool,
@@ -65,6 +79,7 @@ pub struct CommitView {
 }
 
 impl EventEmitter<Navigate> for CommitView {}
+impl EventEmitter<OpenFile> for CommitView {}
 
 impl CommitView {
     /// An empty pane for `repo`.
@@ -82,6 +97,7 @@ impl CommitView {
             rows: Vec::new(),
             collapsed: HashSet::new(),
             selected_file: None,
+            prefer: None,
             loaded: None,
             loading: false,
             diff_loading: false,
@@ -94,6 +110,18 @@ impl CommitView {
             _diff: None,
             _subs: subs,
         }
+    }
+
+    /// Show commit `id` with `path` selected (when the commit changed it).
+    pub fn show_file(&mut self, id: Oid, path: PathBuf, cx: &mut Context<Self>) {
+        if self.commit == Some(id) {
+            if let Some(i) = self.files.iter().position(|f| f.path == path) {
+                self.select_file(Some(i), cx);
+            }
+            return;
+        }
+        self.prefer = Some(path);
+        self.show(Some(id), Vec::new(), cx);
     }
 
     /// Show commit `id` (`None`: nothing selected). `labels`: its refs.
@@ -150,10 +178,11 @@ impl CommitView {
 
     fn set_files(&mut self, info: CommitInfo, files: Vec<FileChange>, cx: &mut Context<Self>) {
         // Keep the same file selected when the next commit changed it too.
-        let previous = self
-            .selected_file
-            .and_then(|i| self.files.get(i))
-            .map(|f| f.path.clone());
+        let previous = self.prefer.take().or_else(|| {
+            self.selected_file
+                .and_then(|i| self.files.get(i))
+                .map(|f| f.path.clone())
+        });
         self.info = Some(Rc::new(info));
         self.files = Rc::new(files);
         self.rebuild_rows(cx);
@@ -477,15 +506,22 @@ impl CommitView {
             }),
         )
         .track_scroll(&self.files_scroll)
-        .flex_1()
-        .min_h_0();
+        .size_full();
+        let view = cx.entity().downgrade();
         div()
             .flex_1()
             .min_h_0()
             .flex()
             .flex_col()
             .child(toolbar)
-            .child(list)
+            .child(
+                div()
+                    .id("files-menu")
+                    .flex_1()
+                    .min_h_0()
+                    .child(list)
+                    .context_menu(move |menu, _, cx| file_menu(menu, &view, cx)),
+            )
             .into_any_element()
     }
 
@@ -564,6 +600,16 @@ impl CommitView {
                         window.focus(&this.focus, cx);
                         this.select_file(Some(index), cx);
                     }))
+                    .capture_any_mouse_down(cx.listener(
+                        move |this, ev: &MouseDownEvent, window, cx| {
+                            if ev.button == MouseButton::Right {
+                                window.focus(&this.focus, cx);
+                                if this.selected_file != Some(index) {
+                                    this.select_file(Some(index), cx);
+                                }
+                            }
+                        },
+                    ))
                     .child(status_badge(f.status, p))
                     .child(
                         div()
@@ -726,6 +772,41 @@ fn is_trailer(line: &str) -> bool {
     line.split_once(": ").is_some_and(|(key, _)| {
         !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
     })
+}
+
+/// The file list's menu: history and blame of the selected file, and copying its path.
+fn file_menu(
+    menu: PopupMenu,
+    view: &WeakEntity<CommitView>,
+    cx: &mut Context<PopupMenu>,
+) -> PopupMenu {
+    let Some(v) = view.upgrade() else {
+        return menu;
+    };
+    let v = v.read(cx);
+    let (Some(rev), Some(f)) = (v.commit, v.selected_file.and_then(|i| v.files.get(i))) else {
+        return menu;
+    };
+    let path = f.path.clone();
+    let deleted = f.status == diff::FileStatus::Deleted;
+    let open = |blame: bool| {
+        let (view, path) = (view.clone(), path.clone());
+        move |_: &gpui_kit::ClickEvent, _: &mut Window, cx: &mut App| {
+            let path = path.clone();
+            let _ = view.update(cx, |_, cx| cx.emit(OpenFile { path, rev, blame }));
+        }
+    };
+    let text = path.to_string_lossy().into_owned();
+    menu.item(PopupMenuItem::new("File History").on_click(open(false)))
+        .item(
+            PopupMenuItem::new("Blame")
+                .disabled(deleted)
+                .on_click(open(true)),
+        )
+        .separator()
+        .item(PopupMenuItem::new("Copy Path").on_click(move |_, _, cx| {
+            cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+        }))
 }
 
 /// A full local date: "Tue, Oct 14 2026 15:02".

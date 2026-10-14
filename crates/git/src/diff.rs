@@ -672,17 +672,23 @@ pub enum Source {
     Head,
     /// The index (staged content).
     Index,
+    /// A commit.
+    Commit(Oid),
 }
 
-/// The bytes of `path` in HEAD or the index (`None` when it is not there, or HEAD is
-/// unborn). Work-tree content is read from disk by the caller.
+/// The bytes of `path` in HEAD, a commit or the index (`None` when it is not there, or
+/// HEAD is unborn). Work-tree content is read from disk by the caller.
 pub fn read_at(repo: &Repo, path: &Path, source: Source) -> Result<Option<Vec<u8>>> {
     let r = repo.local();
     let rela = gix::path::to_unix_separators_on_windows(gix::path::into_bstr(path).gix()?);
     let id = match source {
-        Source::Head => {
-            let Ok(commit) = r.head_commit() else {
-                return Ok(None);
+        Source::Head | Source::Commit(_) => {
+            let commit = match source {
+                Source::Commit(id) => r.find_commit(id).gix()?,
+                _ => match r.head_commit() {
+                    Ok(c) => c,
+                    Err(_) => return Ok(None),
+                },
             };
             let tree = commit.tree().gix()?;
             match tree.lookup_entry_by_path(path).gix()? {

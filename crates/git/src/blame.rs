@@ -256,6 +256,12 @@ pub struct FileVersion {
     pub path: PathBuf,
     /// The path before, for a rename or copy.
     pub old_path: Option<PathBuf>,
+    /// Author name.
+    pub author: String,
+    /// Author time (seconds since the epoch).
+    pub author_time: i64,
+    /// First line of the message.
+    pub summary: String,
 }
 
 /// The commits that changed `path`, newest first, following renames (`log --follow`).
@@ -265,7 +271,7 @@ pub fn file_history(repo: &Repo, path: &Path, rev: Option<&str>) -> Result<Vec<F
         "--follow".into(),
         "-z".into(),
         "--name-status".into(),
-        "--format=%x01%H".into(),
+        "--format=%x01%H%x02%an%x02%at%x02%s".into(),
     ];
     if let Some(rev) = rev {
         args.push(rev.into());
@@ -276,16 +282,21 @@ pub fn file_history(repo: &Repo, path: &Path, rev: Option<&str>) -> Result<Vec<F
     parse_history(&out.stdout)
 }
 
-/// Parse `log -z --name-status --format=%x01%H` output: `\x01<id>\0\n<status>\0<path>\0`
-/// with a second path after renames and copies.
+/// Parse `log -z --name-status --format=%x01%H%x02%an%x02%at%x02%s` output:
+/// `\x01<id>\x02<author>\x02<time>\x02<summary>\0\n<status>\0<path>\0` with a second
+/// path after renames and copies.
 fn parse_history(out: &[u8]) -> Result<Vec<FileVersion>> {
     let mut v = Vec::new();
     let mut fields = out.split(|b| *b == 0).peekable();
     while let Some(f) = fields.next() {
-        let Some(hex) = f.strip_prefix(b"\x01") else {
+        let Some(header) = f.strip_prefix(b"\x01") else {
             continue;
         };
+        let mut parts = header.splitn(4, |b| *b == 2);
+        let hex = parts.next().unwrap_or_default();
         let id = Oid::from_hex(hex).map_err(|_| Error::Parse("file history id".into()))?;
+        let mut text = || String::from_utf8_lossy(parts.next().unwrap_or_default()).into_owned();
+        let (author, time, summary) = (text(), text(), text());
         let Some(status) = fields.next() else { break };
         let status = status.trim_ascii();
         let Some(&code) = status.first() else {
@@ -303,6 +314,9 @@ fn parse_history(out: &[u8]) -> Result<Vec<FileVersion>> {
             status: char::from(code),
             path,
             old_path,
+            author,
+            author_time: time.parse().unwrap_or(0),
+            summary,
         });
     }
     Ok(v)
@@ -416,6 +430,28 @@ mod tests {
             ]
         );
         assert_eq!(h[0].id.to_string(), c3);
+        assert_eq!(
+            (h[0].author.as_str(), h[0].summary.as_str()),
+            ("Test", "edit")
+        );
+        assert!(h[0].author_time > 0);
+        // The file as it was in each version.
+        let at = |v: &FileVersion| {
+            crate::diff::read_at(&repo, &v.path, crate::diff::Source::Commit(v.id)).unwrap()
+        };
+        assert_eq!(
+            at(&h[2]).as_deref(),
+            Some(&b"content that stays the same\nline\n"[..])
+        );
+        assert_eq!(
+            crate::diff::read_at(
+                &repo,
+                Path::new("b.txt"),
+                crate::diff::Source::Commit(h[2].id)
+            )
+            .unwrap(),
+            None
+        );
         assert_eq!(h[2].id.to_string(), c1);
     }
 }
