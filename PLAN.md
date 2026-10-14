@@ -57,10 +57,18 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
       resolve per region (ours / theirs / both / custom); read `:1:` `:2:` `:3:` stages.
       *`conflict::parse` (merge, diff3, zdiff3, any marker size, CRLF kept),
       `ConflictFile::resolve`, `stages` (`ls-files -u`).*
-- [ ] M1-11 `rebase`: interactive rebase todo model (pick, reword, edit, squash, fixup, drop,
+- [x] M1-11 `rebase`: interactive rebase todo model (pick, reword, edit, squash, fixup, drop,
       reorder) written through `GIT_SEQUENCE_EDITOR`; reword messages via `GIT_EDITOR` script.
-- [ ] M1-12 `blame`: `git blame --porcelain` (incremental) parser; file history (`log --follow`).
-- [ ] M1-13 Operations API on `Repo` for every write in M3–M6, each a thin, tested wrapper.
+      *`rebase::plan` / `run` → `RebaseOutcome`; new messages go through `exec git commit
+      --amend -F` lines instead of a `GIT_EDITOR` script (see DECISIONS).*
+- [x] M1-12 `blame`: `git blame --porcelain` (incremental) parser; file history (`log --follow`).
+      *`blame::blame` streams `--incremental` chunks into a `Blame` (per-line commit index);
+      the parser also reads `--porcelain`. `file_history` follows renames.*
+- [x] M1-13 Operations API on `Repo` for every write in M3–M6, each a thin, tested wrapper.
+      *`ops.rs`: commit, stage/unstage/discard/clean/ignore, index flags, checkout, branches,
+      merge, rebase, cherry-pick, revert, reset, tags, stashes, remotes, fetch/pull/push
+      (streaming, cancellable), submodules, worktrees, LFS, patches, bisect, `clone`,
+      `init`; `cli::Git::run_lines`. Conflict continue/abort/skip follow `repo.state()`.*
 
 ## M2 — App shell (`crates/app`)
 
@@ -164,3 +172,5 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   added runs and reuse `diff.rs`'s word diff, as `diff_text` does.
 - Partial staging of a new (intent-to-add) or deleted file: build the patch against an
   empty file instead of refusing a partial selection.
+- Rebase message files stay in `.git/switchhead/` after a stopped rebase that the user
+  then aborts; sweep old `rebase-*` dirs when a repo opens.
