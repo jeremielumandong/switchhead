@@ -615,7 +615,7 @@ impl TreeView {
                                     .child(
                                         div()
                                             .flex_none()
-                                            .w(rpx(10. + 8. * digits))
+                                            .w(rpx(24. + 8. * digits))
                                             .pr(rpx(10.))
                                             .flex()
                                             .justify_end()
