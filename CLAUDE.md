@@ -203,6 +203,9 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
 - The app reads `SWITCHHEAD_DATA` (data folder), `SWITCHHEAD_THEME` and `SWITCHHEAD_ZOOM`;
   screenshots: `Xvfb :99 &`, then `DISPLAY=:99 SWITCHHEAD_DATA=<tmp> switchhead <repo>` and
   `import -window root shot.png` (ImageMagick); `xdotool` drives clicks and keys.
+- gpui-kit compiles `component::highlighter::SyntaxHighlighter` only with a `tree-sitter*`
+  feature (the workspace enables `tree-sitter-languages`); without one the module is a stub
+  and `SyntaxHighlighter` does not exist. Unknown names fall back to `"text"` (no colors).
 - Git for Windows sets `core.autocrlf=true` in its system config, so `git apply` to the work
   tree writes CRLF there. `TestRepo` turns it off; tests that compare file bytes rely on that.
 - GPUI Kit 0.7.3 runs on the application-patched GPUI Fast stack vendored in `vendor/`

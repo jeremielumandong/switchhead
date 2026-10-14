@@ -58,6 +58,10 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("pagedown", PageDown, Some("Graph")),
         KeyBinding::new("home", SelectFirst, Some("Graph")),
         KeyBinding::new("end", SelectLast, Some("Graph")),
+        KeyBinding::new("up", SelectUp, Some("Files")),
+        KeyBinding::new("down", SelectDown, Some("Files")),
+        KeyBinding::new("home", SelectFirst, Some("Files")),
+        KeyBinding::new("end", SelectLast, Some("Files")),
         KeyBinding::new("secondary-shift-h", JumpToHead, None),
     ]);
 }

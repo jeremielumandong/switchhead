@@ -64,6 +64,15 @@ send results to a GPUI task over `tokio::sync::mpsc` (the `sync` feature only, n
 tokio is already approved "sync only"). Short one-off reads (classify a path, scan a
 folder) use GPUI's background executor.
 
+## 2026-10-14 — Syntax colors from gpui-kit's bundled grammars
+
+M2-5 asks for syntax highlighting "via gpui-component". gpui-kit only compiles its
+highlighter with a `tree-sitter*` feature, so the workspace enables
+`tree-sitter-languages` (35 grammars, the same set Switchyard can pick from). No new crate
+is added by hand; the grammars come with the approved gpui-kit. The diff view highlights
+the old and new file once on a background thread and cuts the spans per diff line
+(`diff_model::highlight`); files over 1 MB show without colors.
+
 ## 2026-10-14 — GPUI Kit 0.7.3 on the application-patched GPUI Fast stack
 
 Jeremie asked to move to GPUI Kit 0.7.3 on GPUI Fast, as AgentOpsChat already does.
