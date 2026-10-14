@@ -28,6 +28,7 @@ use switchhead_git::status::{self, Status, StatusOptions};
 use crate::actions;
 use crate::appearance::{rpx, ts};
 use crate::changes_model::{Badge, LineSelection, Lists, Selection, Side};
+use crate::commit_box::{CommitBox, CommitEvent};
 use crate::diff_view::{self, Content, Loaded, highlight_theme, theme_key};
 use crate::store::DiffPrefs;
 use crate::theme::{MONO, Palette, SANS, palette};
@@ -78,8 +79,20 @@ pub struct ChangesView {
     patch: Option<Arc<FilePatch>>,
     lines: LineSelection,
     _diff: Option<Task<()>>,
+    /// The commit box (made on first render: its inputs need the window).
+    commit: Option<(Entity<CommitBox>, Subscription)>,
+    /// Focus the commit subject once the box exists.
+    focus_commit: bool,
     _subs: Vec<Subscription>,
 }
+
+/// What Local Changes reports to the repository view.
+pub enum ChangesEvent {
+    /// A commit was made: the history changed.
+    Committed,
+}
+
+impl gpui_kit::EventEmitter<ChangesEvent> for ChangesView {}
 
 impl ChangesView {
     /// The view for `repo`; [`ChangesView::refresh`] reads status.
@@ -111,6 +124,8 @@ impl ChangesView {
             patch: None,
             lines: LineSelection::default(),
             _diff: None,
+            commit: None,
+            focus_commit: false,
             _subs: subs,
         }
     }
@@ -153,9 +168,47 @@ impl ChangesView {
         .detach();
     }
 
+    /// Show the commit box and put the cursor in its subject.
+    pub fn focus_commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match &self.commit {
+            Some((b, _)) => b.update(cx, |b, cx| b.focus(window, cx)),
+            None => {
+                self.focus_commit = true;
+                cx.notify();
+            }
+        }
+    }
+
+    fn commit_box(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Entity<CommitBox> {
+        if let Some((b, _)) = &self.commit {
+            return b.clone();
+        }
+        let staged = self.lists.staged.len();
+        let b = cx.new(|cx| {
+            let mut b = CommitBox::new(self.repo.clone(), window, cx);
+            b.set_staged(staged, cx);
+            b
+        });
+        let sub = cx.subscribe(&b, |this, _, ev: &CommitEvent, cx| match ev {
+            CommitEvent::Committed => {
+                this.refresh(cx);
+                cx.emit(ChangesEvent::Committed);
+            }
+        });
+        if std::mem::take(&mut self.focus_commit) {
+            b.update(cx, |b, cx| b.focus(window, cx));
+        }
+        self.commit = Some((b.clone(), sub));
+        b
+    }
+
     fn set_status(&mut self, st: Status, cx: &mut Context<Self>) {
         self.ready = true;
         self.lists = Lists::new(&st);
+        if let Some((b, _)) = &self.commit {
+            let n = self.lists.staged.len();
+            b.update(cx, |b, cx| b.set_staged(n, cx));
+        }
         let paths = |ix: &[usize]| ix.iter().map(|i| st.entries[*i].path.clone()).collect();
         self.unstaged_paths = paths(&self.lists.unstaged);
         self.staged_paths = paths(&self.lists.staged);
@@ -893,7 +946,7 @@ fn badge_chip(b: Badge, p: &Palette) -> AnyElement {
 }
 
 /// A compact header button.
-fn small_button(
+pub(crate) fn small_button(
     id: impl Into<gpui_kit::ElementId>,
     label: impl Into<SharedString>,
     enabled: bool,
@@ -917,7 +970,7 @@ fn small_button(
         .child(label.into())
 }
 
-fn first_line(s: &str) -> String {
+pub(crate) fn first_line(s: &str) -> String {
     s.lines()
         .map(str::trim)
         .find(|l| !l.is_empty())
@@ -937,6 +990,7 @@ impl Render for ChangesView {
         let rem = window.rem_size();
         let row_h = diff_view::row_height(cx);
         let file_row_h = (22. * crate::appearance::zoom(cx)).round();
+        let commit_box = self.commit_box(window, cx);
         let left =
             div()
                 .size_full()
@@ -969,9 +1023,16 @@ impl Render for ChangesView {
                                 resizable_panel()
                                     .size_range(rem * (80. / 13.)..gpui_kit::Pixels::MAX)
                                     .child(
-                                        div().size_full().border_t_1().border_color(p.bd).child(
-                                            self.render_list(Side::Staged, &p, file_row_h, cx),
-                                        ),
+                                        div()
+                                            .size_full()
+                                            .flex()
+                                            .flex_col()
+                                            .border_t_1()
+                                            .border_color(p.bd)
+                                            .child(div().flex_1().min_h_0().child(
+                                                self.render_list(Side::Staged, &p, file_row_h, cx),
+                                            ))
+                                            .child(commit_box),
                                     ),
                             ),
                     ),

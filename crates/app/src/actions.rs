@@ -47,6 +47,7 @@ actions!(
         ToggleStaged,
         SelectAllFiles,
         SwitchFileList,
+        WriteCommitMessage,
     ]
 );
 
@@ -97,6 +98,7 @@ pub fn commands() -> Vec<Command> {
         c("Show All Commits", "History", ShowCommits, true),
         c("Stage All Changes", "Changes", StageAll, true),
         c("Unstage All Changes", "Changes", UnstageAll, true),
+        c("Commit…", "Changes", WriteCommitMessage, true),
         c(
             "Toggle Inline / Side-by-Side Diff",
             "Diff",
@@ -156,14 +158,15 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("secondary-p", QuickLaunch, None),
         KeyBinding::new("secondary-,", ShowSettings, None),
         KeyBinding::new("secondary-shift-c", CopyCommitId, Some("Graph")),
-        KeyBinding::new("up", SelectUp, Some("Changes")),
-        KeyBinding::new("down", SelectDown, Some("Changes")),
-        KeyBinding::new("home", SelectFirst, Some("Changes")),
-        KeyBinding::new("end", SelectLast, Some("Changes")),
-        KeyBinding::new("space", ToggleStaged, Some("Changes")),
-        KeyBinding::new("enter", ToggleStaged, Some("Changes")),
-        KeyBinding::new("secondary-a", SelectAllFiles, Some("Changes")),
-        KeyBinding::new("tab", SwitchFileList, Some("Changes")),
+        KeyBinding::new("up", SelectUp, Some("Changes && !Input")),
+        KeyBinding::new("down", SelectDown, Some("Changes && !Input")),
+        KeyBinding::new("home", SelectFirst, Some("Changes && !Input")),
+        KeyBinding::new("end", SelectLast, Some("Changes && !Input")),
+        KeyBinding::new("space", ToggleStaged, Some("Changes && !Input")),
+        KeyBinding::new("enter", ToggleStaged, Some("Changes && !Input")),
+        KeyBinding::new("secondary-a", SelectAllFiles, Some("Changes && !Input")),
+        KeyBinding::new("tab", SwitchFileList, Some("Changes && !Input")),
+        KeyBinding::new("secondary-shift-enter", WriteCommitMessage, None),
     ]);
 }
 

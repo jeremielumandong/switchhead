@@ -31,7 +31,7 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use crate::actions;
 use crate::appearance::{rpx, ts};
-use crate::changes_view::ChangesView;
+use crate::changes_view::{ChangesEvent, ChangesView};
 use crate::commit_view::{CommitView, Navigate};
 use crate::graph_paint;
 use crate::theme::{MONO, Palette, palette};
@@ -174,7 +174,7 @@ pub struct RepoView {
     _walk: Option<Task<()>>,
     _watch: Task<()>,
     _details: Subscription,
-    _changes: Subscription,
+    _changes: [Subscription; 2],
     _op: Option<Task<()>>,
 }
 
@@ -190,7 +190,13 @@ impl RepoView {
             cx.notify();
         });
         let changes = cx.new(|cx| ChangesView::new(repo.clone(), cx));
-        let changes_sub = cx.observe(&changes, |_, _, cx| cx.notify());
+        let changes_sub = [
+            cx.observe(&changes, |_, _, cx| cx.notify()),
+            // A commit moved a branch: read refs now rather than at the next poll.
+            cx.subscribe(&changes, |this, _, ev: &ChangesEvent, cx| match ev {
+                ChangesEvent::Committed => this.check_changes(cx),
+            }),
+        ];
         let mut v = Self {
             state: repo.state(),
             repo,
@@ -1257,6 +1263,12 @@ impl Render for RepoView {
             .on_action(cx.listener(|this, _: &actions::ShowCommits, window, cx| {
                 this.set_mode(Mode::Commits, window, cx)
             }))
+            .on_action(
+                cx.listener(|this, _: &actions::WriteCommitMessage, window, cx| {
+                    this.set_mode(Mode::Changes, window, cx);
+                    this.changes.update(cx, |c, cx| c.focus_commit(window, cx));
+                }),
+            )
             .on_action(cx.listener(|this, _: &actions::StageAll, _, cx| {
                 this.changes.update(cx, |c, cx| c.stage_all(cx))
             }))

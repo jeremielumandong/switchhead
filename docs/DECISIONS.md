@@ -104,3 +104,12 @@ fingerprint from `git::watch` changes (staging from a terminal), and when the wi
 back to the front (files edited in another app). Work-tree edits made while switchhead stays
 in front show on Refresh. `git status` is not polled: on a large tree it costs far more
 than the `.git` metadata check.
+
+## 2026-10-14 — Commit box: recent messages and the template
+
+Recent commit messages are kept once for the whole app (20, newest first, in state.json),
+not per repository, so a message reused across a monorepo split is still there; they are
+stored as git keeps them (`--cleanup=strip`). The repository's `commit.template` fills the
+box when it is empty, and an untouched template does not count as a message. Commit runs
+`git commit -F -` with the message on stdin, so hooks and signing are
+git's own. Spell check needs a crate outside the approved list and is a follow-up.

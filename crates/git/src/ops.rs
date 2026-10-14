@@ -231,6 +231,30 @@ impl Repo {
             .to_owned())
     }
 
+    /// The commit message template (`commit.template`), if one is set and readable.
+    /// A relative path is relative to the work tree, as for `git commit`.
+    pub fn commit_template(&self) -> Result<Option<String>> {
+        let path = match self
+            .git()?
+            .text(&["config", "--path", "--get", "commit.template"])
+        {
+            Ok(p) => p.trim_end_matches(['\n', '\r']).to_owned(),
+            // Exit code 1: the key is not set.
+            Err(Error::Command { code: Some(1), .. }) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        if path.is_empty() {
+            return Ok(None);
+        }
+        match std::fs::read(self.root().join(path)) {
+            Ok(bytes) => Ok(Some(String::from_utf8_lossy(&bytes).into_owned())),
+            Err(e) => {
+                tracing::warn!(error = %e, "could not read the commit template");
+                Ok(None)
+            }
+        }
+    }
+
     /// Mark conflicted paths resolved (stage them).
     pub fn mark_resolved(&self, paths: &[&Path]) -> Result<()> {
         self.run_paths(vec![os("add")], paths)?;
@@ -738,6 +762,21 @@ mod tests {
 
     fn quiet() -> (Cancel, impl FnMut(&str)) {
         (Cancel::default(), |_: &str| {})
+    }
+
+    #[test]
+    fn reads_the_commit_template() {
+        let t = TestRepo::new();
+        let r = repo(&t);
+        assert_eq!(r.commit_template().unwrap(), None);
+        t.write(".gitmessage", "Subject\n\n# Why?\n");
+        t.git(&["config", "commit.template", ".gitmessage"]);
+        assert_eq!(
+            r.commit_template().unwrap().as_deref(),
+            Some("Subject\n\n# Why?\n")
+        );
+        t.git(&["config", "commit.template", "missing.txt"]);
+        assert_eq!(r.commit_template().unwrap(), None);
     }
 
     #[test]

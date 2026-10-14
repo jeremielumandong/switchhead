@@ -52,6 +52,7 @@ pub struct Workspace {
     _save: Option<Task<()>>,
     _omarchy: Option<Task<()>>,
     _diff_prefs: gpui_kit::Subscription,
+    _messages: gpui_kit::Subscription,
     /// Quick Launch, while open.
     palette: Option<(Entity<PaletteView>, gpui_kit::Subscription)>,
     _activation: gpui_kit::Subscription,
@@ -101,6 +102,13 @@ impl Workspace {
                 this.save(cx);
             }
         });
+        let messages = cx.observe_global::<store::RecentMessages>(|this, cx| {
+            let m = cx.global::<store::RecentMessages>();
+            if this.state.messages != *m {
+                this.state.messages = m.clone();
+                this.save(cx);
+            }
+        });
         // Coming back to the window: pick up what changed in a terminal meanwhile.
         let activation = cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active()
@@ -123,6 +131,7 @@ impl Workspace {
             _save: None,
             _omarchy: omarchy,
             _diff_prefs: diff_prefs,
+            _messages: messages,
             palette: None,
             _activation: activation,
         };

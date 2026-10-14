@@ -10,6 +10,7 @@ mod appearance;
 mod assets;
 mod changes_model;
 mod changes_view;
+mod commit_box;
 mod commit_view;
 mod diff_model;
 mod diff_view;
@@ -114,6 +115,7 @@ fn main() -> Result<()> {
             }
             appearance::set(look, cx);
             cx.set_global(state.diff);
+            cx.set_global(state.messages.clone());
             let theme_key = std::env::var("SWITCHHEAD_THEME")
                 .ok()
                 .or_else(|| state.theme.clone());

@@ -125,8 +125,14 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   lines are picked with click, Shift-click and Ctrl/Cmd-click (both layouts) and staged
   from the toolbar. `stage::apply_lines` applies the exact `git diff` shown; discarding
   asks first in a gpui-kit alert dialog. New and deleted files stage whole only (M1-9).*
-- [ ] M3-3 Commit box: subject/body, amend (loads previous message), sign-off, skip hooks,
+- [x] M3-3 Commit box: subject/body, amend (loads previous message), sign-off, skip hooks,
       commit message templates, recent messages, spell check, char counters.
+  *`commit_box.rs` under the staged list: subject and description, Amend (loads the last
+  message, restores the draft when turned off), Sign-off, Skip hooks, `commit.template`
+  (`Repo::commit_template`) in empty fields, the last 20 messages in a Recent menu
+  (state.json), and a subject counter (amber past 50, red past 72). Ctrl/Cmd+Enter
+  commits; Ctrl/Cmd+Shift+Enter or "Commit…" jumps to it. Hook output shows in full.
+  Spell check is deferred: no approved crate (Follow-ups).*
 - [ ] M3-4 Discard changes, delete untracked, ignore file/pattern (`.gitignore`), assume
       unchanged / skip worktree.
 - [ ] M3-5 Image diff (side by side, swipe, onion skin) and binary file info.
@@ -224,3 +230,5 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   Local Changes.
 - Work-tree edits made while switchhead is in front show only on Refresh or the next
   focus change; a watcher (`notify`, pending approval) would catch them live.
+- Spell check in the commit box (M3-3): needs a dictionary crate (e.g. `spellbook`, MIT,
+  Hunspell dictionaries) and a squiggle decoration on the input; ask before adding it.
