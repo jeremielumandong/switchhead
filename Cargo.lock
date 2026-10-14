@@ -7123,6 +7123,7 @@ dependencies = [
  "serde_json",
  "switchhead-git",
  "tempfile",
+ "tokio",
  "tracing",
  "tracing-subscriber",
 ]
