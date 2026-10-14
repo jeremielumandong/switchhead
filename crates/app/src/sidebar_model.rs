@@ -83,6 +83,42 @@ pub fn matches(text: &str, filter: &str) -> bool {
         .all(|w| text.contains(&w.to_lowercase()))
 }
 
+/// Why `name` cannot be a branch name, following `git check-ref-format --branch`
+/// (`None`: it can).
+pub fn branch_name_problem(name: &str) -> Option<&'static str> {
+    if name.is_empty() {
+        return Some("Enter a name");
+    }
+    if name.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Some("Names cannot contain spaces");
+    }
+    if name
+        .chars()
+        .any(|c| matches!(c, '~' | '^' | ':' | '?' | '*' | '[' | '\\'))
+    {
+        return Some("Names cannot contain ~ ^ : ? * [ or \\");
+    }
+    if name.starts_with('-') {
+        return Some("Names cannot start with -");
+    }
+    if name == "@" || name.contains("@{") || name.contains("..") {
+        return Some("Names cannot contain .. or @{");
+    }
+    if name.starts_with('/') || name.ends_with('/') || name.contains("//") {
+        return Some("Folders need a name on both sides of /");
+    }
+    if name.ends_with('.') || name.ends_with(".lock") {
+        return Some("Names cannot end with . or .lock");
+    }
+    if name
+        .split('/')
+        .any(|part| part.starts_with('.') || part.ends_with(".lock"))
+    {
+        return Some("No part of a name can start with . or end with .lock");
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,5 +216,31 @@ mod tests {
         assert!(matches("feature/Login-Form", "feat form"));
         assert!(!matches("feature/Login-Form", "feat main"));
         assert!(matches("anything", "  "));
+    }
+
+    #[test]
+    fn checks_branch_names() {
+        for ok in ["main", "feature/login-form", "v1.2", "fix_#12", "a/b/c"] {
+            assert_eq!(branch_name_problem(ok), None, "{ok}");
+        }
+        for bad in [
+            "",
+            "has space",
+            "a..b",
+            "-x",
+            "a/",
+            "/a",
+            "a//b",
+            "x.lock",
+            "a/.hidden",
+            "x.",
+            "what?",
+            "a~1",
+            "@",
+            "a@{1}",
+            "tab\t",
+        ] {
+            assert!(branch_name_problem(bad).is_some(), "{bad:?}");
+        }
     }
 }

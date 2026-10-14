@@ -49,6 +49,7 @@ actions!(
         SwitchFileList,
         WriteCommitMessage,
         DiscardSelected,
+        NewBranch,
     ]
 );
 
@@ -100,6 +101,7 @@ pub fn commands() -> Vec<Command> {
         c("Stage All Changes", "Changes", StageAll, true),
         c("Unstage All Changes", "Changes", UnstageAll, true),
         c("Commit…", "Changes", WriteCommitMessage, true),
+        c("New Branch…", "Branches", NewBranch, true),
         c(
             "Toggle Inline / Side-by-Side Diff",
             "Diff",
@@ -168,6 +170,7 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("secondary-a", SelectAllFiles, Some("Changes && !Input")),
         KeyBinding::new("tab", SwitchFileList, Some("Changes && !Input")),
         KeyBinding::new("secondary-shift-enter", WriteCommitMessage, None),
+        KeyBinding::new("secondary-shift-b", NewBranch, None),
         KeyBinding::new(
             "secondary-backspace",
             DiscardSelected,

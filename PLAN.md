@@ -167,9 +167,15 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   Double-click checks out a branch, a remote branch (tracking branch if new) or a tag
   (asks: detached), and opens a submodule or linked worktree in a tab
   (`worktrees.rs`, via `git`). "Show only this ref" moved from double-click to Alt-click.*
-- [ ] M4-2 Branch ops: create (from any commit), rename, delete (local/remote), checkout
+- [x] M4-2 Branch ops: create (from any commit), rename, delete (local/remote), checkout
       (with tracking), set upstream, merge into current (ff / no-ff / squash), rebase current
       onto, compare branches, push/delete remote branch.
+  *`repo_view/branch_ops.rs`: the sidebar's right-click menu on branches, remote branches
+  and tags (check out, merge ▸ modes, rebase, new branch, rename, delete with force and
+  upstream options, push, set upstream, compare, show only, copy name), and the toolbar's
+  Branch button / Ctrl+Shift+B at the selected commit. Names are checked like
+  `check-ref-format --branch`. Compare walks `left...right` (`Scope::Compare`, ends at the
+  merge bases); it does not yet mark which side a commit is on (Follow-ups).*
 - [ ] M4-3 Fetch (all remotes, prune), Pull (merge / rebase, autostash), Push (force-with-lease,
       tags, set upstream) with progress, cancel and errors in the activity panel.
 - [ ] M4-4 Commit context menu: checkout, create branch/tag here, cherry-pick, revert, reset
@@ -229,6 +235,9 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [ ] M7-3 Updates, crash logs, docs site.
 
 ## Follow-ups
+
+- Branch compare: mark each commit's side (left / right) in the graph, like
+  `git log --left-right`.
 
 - Merge helper: keep CRLF line endings when writing the result; prefill the commit box
   from `MERGE_MSG` during a merge.

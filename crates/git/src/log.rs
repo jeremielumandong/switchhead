@@ -210,6 +210,8 @@ pub enum Scope {
     Head,
     /// These revisions (branch names, full ref names, ids).
     Revs(Vec<String>),
+    /// Commits on either revision but not both (`git log left...right`).
+    Compare(String, String),
 }
 
 /// Commit order.
@@ -319,8 +321,28 @@ pub fn tips(repo: &Repo, scope: &Scope) -> Result<Vec<Oid>> {
                 add(repo.resolve(rev)?, &mut out);
             }
         }
+        Scope::Compare(left, right) => {
+            add(repo.resolve(left)?, &mut out);
+            add(repo.resolve(right)?, &mut out);
+        }
     }
     Ok(out)
+}
+
+/// Where the walk stops (`^ends`): the merge bases of a comparison, else nothing.
+fn ends(repo: &Repo, scope: &Scope) -> Result<Vec<Oid>> {
+    let Scope::Compare(left, right) = scope else {
+        return Ok(Vec::new());
+    };
+    // Unrelated histories have no merge base: git exits 1 and both sides show in full.
+    let Ok(out) = repo.git()?.run(&["merge-base", "--all", left, right]) else {
+        return Ok(Vec::new());
+    };
+    Ok(out
+        .text()
+        .lines()
+        .filter_map(|l| Oid::from_hex(l.trim().as_bytes()).ok())
+        .collect())
 }
 
 /// Walk the log, sending batches to `on_batch` until the history ends, `cancel` is set,
@@ -357,7 +379,8 @@ pub fn walk(
         inner: &r.objects,
         shallow: &shallow,
     };
-    let iter = topo::Builder::from_iters(&objects, tips, None::<Vec<Oid>>)
+    let ends = ends(repo, &opts.scope)?;
+    let iter = topo::Builder::from_iters(&objects, tips, Some(ends))
         .sorting(sorting)
         .with_commit_graph(r.commit_graph_if_enabled().gix()?)
         .build()
@@ -664,6 +687,12 @@ mod tests {
         };
         let (log, _) = collect(&repo, &revs).unwrap();
         assert_eq!(summaries(&log), ["side", "one"]);
+        let compare = LogOptions {
+            scope: Scope::Compare("main".into(), "side".into()),
+            ..Default::default()
+        };
+        let (log, _) = collect(&repo, &compare).unwrap();
+        assert_eq!(summaries(&log), ["mailmap", "side"]);
     }
 
     #[test]

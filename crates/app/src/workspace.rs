@@ -365,7 +365,7 @@ impl Workspace {
 
     // ---------------------------------------------------------------- toolbar
 
-    fn repo_op(&mut self, op: ToolbarOp, cx: &mut Context<Self>) {
+    fn repo_op(&mut self, op: ToolbarOp, window: &mut Window, cx: &mut Context<Self>) {
         let Some(view) = self.active_repo().cloned() else {
             return;
         };
@@ -400,6 +400,7 @@ impl Workspace {
                 |r, _, _| r.stash_apply(0, true),
                 cx,
             ),
+            ToolbarOp::Branch => v.new_branch_at_selection(window, cx),
             ToolbarOp::Refresh => v.reload(cx),
         });
     }
@@ -432,7 +433,9 @@ impl Workspace {
                 })
                 .tooltip(move |w, cx| Tooltip::new(tip).build(w, cx))
                 .when_some(op.filter(|_| enabled), |d, op| {
-                    d.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.repo_op(op, cx)))
+                    d.on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.repo_op(op, window, cx)
+                    }))
                 })
                 .child(svg().path(icon).size(rpx(17.)).text_color(if enabled {
                     p.fg2
@@ -496,8 +499,8 @@ impl Workspace {
                 "tool-branch",
                 "icons/sh-git-branch.svg",
                 "Branch",
-                "New branch (coming with branch operations)",
-                None,
+                "New branch at the selected commit",
+                Some(ToolbarOp::Branch),
                 cx,
             ))
             .child(div().flex_1())
@@ -1024,6 +1027,7 @@ enum ToolbarOp {
     Push,
     Stash,
     Pop,
+    Branch,
     Refresh,
 }
 
@@ -1085,26 +1089,24 @@ impl Render for Workspace {
             )
             .on_action(cx.listener(|this, _: &actions::NextTab, _, cx| this.cycle_tab(1, cx)))
             .on_action(cx.listener(|this, _: &actions::PreviousTab, _, cx| this.cycle_tab(-1, cx)))
-            .on_action(
-                cx.listener(|this, _: &actions::Refresh, _, cx| {
-                    this.repo_op(ToolbarOp::Refresh, cx)
-                }),
-            )
-            .on_action(
-                cx.listener(|this, _: &actions::Fetch, _, cx| this.repo_op(ToolbarOp::Fetch, cx)),
-            )
-            .on_action(
-                cx.listener(|this, _: &actions::Pull, _, cx| this.repo_op(ToolbarOp::Pull, cx)),
-            )
-            .on_action(
-                cx.listener(|this, _: &actions::Push, _, cx| this.repo_op(ToolbarOp::Push, cx)),
-            )
-            .on_action(
-                cx.listener(|this, _: &actions::Stash, _, cx| this.repo_op(ToolbarOp::Stash, cx)),
-            )
-            .on_action(
-                cx.listener(|this, _: &actions::PopStash, _, cx| this.repo_op(ToolbarOp::Pop, cx)),
-            )
+            .on_action(cx.listener(|this, _: &actions::Refresh, window, cx| {
+                this.repo_op(ToolbarOp::Refresh, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::Fetch, window, cx| {
+                this.repo_op(ToolbarOp::Fetch, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::Pull, window, cx| {
+                this.repo_op(ToolbarOp::Pull, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::Push, window, cx| {
+                this.repo_op(ToolbarOp::Push, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::Stash, window, cx| {
+                this.repo_op(ToolbarOp::Stash, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::PopStash, window, cx| {
+                this.repo_op(ToolbarOp::Pop, window, cx)
+            }))
             .on_action(cx.listener(|this, _: &actions::ToggleSidebar, _, cx| {
                 this.rail_click(RailItem::Branches, cx)
             }))

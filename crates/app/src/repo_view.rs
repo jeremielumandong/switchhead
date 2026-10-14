@@ -37,6 +37,7 @@ use crate::graph_paint;
 use crate::theme::{MONO, Palette, palette};
 use crate::ui;
 
+mod branch_ops;
 mod sidebar;
 
 use sidebar::{Section, SideRow};
@@ -127,6 +128,8 @@ pub struct RepoView {
     side_filter: Option<(Entity<gpui_kit::component::input::InputState>, Subscription)>,
     side_filter_text: String,
     side_rows: Vec<SideRow>,
+    /// The sidebar row a right click landed on (for its context menu).
+    menu_row: Option<usize>,
     details: Entity<CommitView>,
     details_split: Entity<ResizableState>,
     /// The commit the details pane shows.
@@ -187,6 +190,7 @@ impl RepoView {
             side_filter: None,
             side_filter_text: String::new(),
             side_rows: Vec::new(),
+            menu_row: None,
             details,
             details_split: cx.new(|_| ResizableState::default()),
             shown: None,
@@ -594,6 +598,7 @@ impl RepoView {
                 .collect::<Vec<_>>()
                 .join(", ")
                 .into(),
+            Scope::Compare(a, b) => format!("{} ⇄ {}", short_ref(a), short_ref(b)).into(),
         };
         let current_only = self.scope == Scope::Head;
         div()
@@ -620,7 +625,7 @@ impl RepoView {
                     "scope",
                     vec![
                         (
-                            if matches!(self.scope, Scope::Revs(_)) {
+                            if matches!(self.scope, Scope::Revs(_) | Scope::Compare(..)) {
                                 scope_label.clone()
                             } else {
                                 "All".into()
@@ -920,6 +925,9 @@ impl Render for RepoView {
                     this.changes.update(cx, |c, cx| c.focus_commit(window, cx));
                 }),
             )
+            .on_action(cx.listener(|this, _: &actions::NewBranch, window, cx| {
+                this.new_branch_at_selection(window, cx)
+            }))
             .on_action(cx.listener(|this, _: &actions::StageAll, _, cx| {
                 this.changes.update(cx, |c, cx| c.stage_all(cx))
             }))

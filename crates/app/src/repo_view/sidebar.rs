@@ -9,12 +9,13 @@ use std::path::PathBuf;
 
 use gpui_kit::AppContext as _;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::{Sizable as _, WindowExt as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, ClickEvent, Context, FontWeight, InteractiveElement as _, IntoElement,
-    ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
-    px, svg, uniform_list,
+    AnyElement, ClickEvent, Context, FontWeight, InteractiveElement as _, IntoElement, MouseButton,
+    MouseDownEvent, ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _,
+    Window, div, px, svg, uniform_list,
 };
 use switchhead_git::Oid;
 use switchhead_git::log::Scope;
@@ -406,7 +407,12 @@ impl RepoView {
     }
 
     /// Double-click: check out, or open in a tab.
-    fn activate_row(&mut self, target: Target, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn activate_target(
+        &mut self,
+        target: Target,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if matches!(self.op, Some(OpStatus::Running { .. })) {
             return;
         }
@@ -534,7 +540,19 @@ impl RepoView {
                     )
                 },
             )
-            .child(list)
+            .child({
+                let view = cx.entity().downgrade();
+                div()
+                    .id("refs-menu")
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .child(list)
+                    .context_menu(move |menu, window, cx| {
+                        super::branch_ops::build_ref_menu(menu, &view, window, cx)
+                    })
+            })
             .into_any_element()
     }
 
@@ -682,6 +700,12 @@ impl RepoView {
                     .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
                         this.click_row(ev, id, rev.clone(), target.clone(), window, cx)
                     }))
+                    .capture_any_mouse_down(cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
+                        if ev.button == MouseButton::Right {
+                            this.menu_row = Some(i);
+                            cx.notify();
+                        }
+                    }))
                     .child(ui::dot(
                         if current {
                             p.acc
@@ -736,7 +760,7 @@ impl RepoView {
             return;
         }
         if ev.click_count() >= 2 {
-            self.activate_row(target, window, cx);
+            self.activate_target(target, window, cx);
             return;
         }
         if let Some(id) = id {
