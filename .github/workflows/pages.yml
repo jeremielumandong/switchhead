@@ -1,16 +1,10 @@
 name: Website
 
-# Publishes site/ to GitHub Pages. Screenshots and fonts are copied in from
+# Publishes site/ to GitHub Pages. Runs only when started by hand (Actions → Website →
+# Run workflow); pushes to main do not deploy. Screenshots and fonts are copied in from
 # docs/screenshots and crates/app/assets/fonts, so the README, the app and the site
 # share one copy.
 on:
-  push:
-    branches: [main]
-    paths:
-      - site/**
-      - docs/screenshots/**
-      - crates/app/assets/fonts/**
-      - .github/workflows/pages.yml
   workflow_dispatch:
 
 permissions:
