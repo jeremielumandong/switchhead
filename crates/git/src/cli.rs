@@ -240,6 +240,79 @@ impl Git {
     }
 }
 
+impl Git {
+    /// Run and hand each stdout line (without its newline) to `on_line` as it arrives, for
+    /// output that is useful before the command ends (`blame --incremental`). `on_line`
+    /// returning `false`, or `cancel`, kills the process; that is not an error.
+    pub fn run_lines<S: AsRef<OsStr>>(
+        &self,
+        args: &[S],
+        cancel: &Cancel,
+        mut on_line: impl FnMut(&[u8]) -> bool,
+    ) -> Result<()> {
+        use std::io::BufRead as _;
+
+        let started = Instant::now();
+        let mut cmd = self.command(args);
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut child = cmd.spawn().map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => Error::GitMissing,
+            _ => Error::Io(e),
+        })?;
+        let mut stderr = child.stderr.take();
+        let err_thread = std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(s) = stderr.as_mut() {
+                let _ = s.read_to_end(&mut buf);
+            }
+            buf
+        });
+        let mut stopped = false;
+        if let Some(stdout) = child.stdout.take() {
+            let mut r = BufReader::new(stdout);
+            let mut line = Vec::new();
+            loop {
+                if cancel.is_cancelled() {
+                    stopped = true;
+                    break;
+                }
+                line.clear();
+                if r.read_until(b'\n', &mut line)? == 0 {
+                    break;
+                }
+                let l = line.strip_suffix(b"\n").unwrap_or(&line);
+                if !on_line(l) {
+                    stopped = true;
+                    break;
+                }
+            }
+        }
+        if stopped {
+            let _ = child.kill();
+        }
+        let status = child.wait()?;
+        let stderr = err_thread.join().unwrap_or_default();
+        tracing::debug!(
+            args = %join_args(args),
+            ms = started.elapsed().as_millis() as u64,
+            code = status.code(),
+            "git (streamed)"
+        );
+        if stopped || status.success() {
+            Ok(())
+        } else {
+            Err(command_error(
+                args,
+                status.code(),
+                &Output {
+                    stdout: Vec::new(),
+                    stderr,
+                },
+            ))
+        }
+    }
+}
+
 /// Read up to and including the next `\n` or `\r`.
 fn read_until_any(r: &mut impl std::io::BufRead, out: &mut Vec<u8>) -> std::io::Result<usize> {
     let mut total = 0;
