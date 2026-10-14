@@ -31,6 +31,7 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use crate::actions;
 use crate::appearance::{rpx, ts};
+use crate::changes_view::ChangesView;
 use crate::commit_view::{CommitView, Navigate};
 use crate::graph_paint;
 use crate::theme::{MONO, Palette, palette};
@@ -102,6 +103,15 @@ impl Section {
     }
 }
 
+/// What the main area shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    /// The commit graph and the selected commit's details.
+    Commits,
+    /// Local Changes: unstaged and staged files.
+    Changes,
+}
+
 /// One line of the sidebar (flattened, so the list can be virtualized).
 #[derive(Clone, Debug)]
 enum SideRow {
@@ -155,12 +165,16 @@ pub struct RepoView {
     details_split: Entity<ResizableState>,
     /// The commit the details pane shows.
     shown: Option<Oid>,
+    /// Graph or Local Changes.
+    pub mode: Mode,
+    changes: Entity<ChangesView>,
     /// The `.git` fingerprint the view last matched (see [`RepoView::check_changes`]).
     watched: Option<Fingerprint>,
     checking: bool,
     _walk: Option<Task<()>>,
     _watch: Task<()>,
     _details: Subscription,
+    _changes: Subscription,
     _op: Option<Task<()>>,
 }
 
@@ -175,6 +189,8 @@ impl RepoView {
             }
             cx.notify();
         });
+        let changes = cx.new(|cx| ChangesView::new(repo.clone(), cx));
+        let changes_sub = cx.observe(&changes, |_, _, cx| cx.notify());
         let mut v = Self {
             state: repo.state(),
             repo,
@@ -199,6 +215,9 @@ impl RepoView {
             details,
             details_split: cx.new(|_| ResizableState::default()),
             shown: None,
+            mode: Mode::Commits,
+            changes,
+            _changes: changes_sub,
             watched: None,
             checking: false,
             _watch: Self::watch(cx),
@@ -242,16 +261,37 @@ impl RepoView {
                 if v.loading || matches!(v.op, Some(OpStatus::Running { .. })) {
                     return;
                 }
-                let changed = v.watched.is_some_and(|w| w.refs != fp.refs);
-                v.watched = Some(fp);
-                if changed {
+                let old = v.watched.replace(fp);
+                if old.is_some_and(|w| w.refs != fp.refs) {
                     tracing::debug!(repo = v.repo.name(), "refs changed outside the app");
                     v.reload(cx);
                     cx.notify();
+                } else if old.is_some_and(|w| w.index != fp.index) {
+                    v.changes.update(cx, |c, cx| c.refresh(cx));
                 }
             });
         })
         .detach();
+    }
+
+    /// The window came back to the front: re-read refs if they changed and status
+    /// always (files may have been edited elsewhere; status does not touch `.git`).
+    pub fn activated(&mut self, cx: &mut Context<Self>) {
+        self.check_changes(cx);
+        self.changes.update(cx, |c, cx| c.refresh(cx));
+    }
+
+    /// Show the graph or Local Changes, and focus it.
+    pub fn set_mode(&mut self, mode: Mode, window: &mut Window, cx: &mut Context<Self>) {
+        self.mode = mode;
+        match mode {
+            Mode::Commits => window.focus(&self.focus, cx),
+            Mode::Changes => {
+                let f = self.changes.focus_handle(cx);
+                window.focus(&f, cx);
+            }
+        }
+        cx.notify();
     }
 
     /// The tab's title.
@@ -282,6 +322,7 @@ impl RepoView {
         self.loading = true;
         self.error = None;
         self.state = self.repo.state();
+        self.changes.update(cx, |c, cx| c.refresh(cx));
         let (tx, mut rx) = unbounded_channel();
         let repo = self.repo.clone();
         let opts = LogOptions {
@@ -696,7 +737,67 @@ impl RepoView {
                         d.child(ui::chip(self.state.label(), p.modified))
                     }),
             )
+            .child(self.render_nav(p, cx))
             .child(list)
+            .into_any_element()
+    }
+
+    /// "Local Changes" and "All Commits" above the refs.
+    fn render_nav(&self, p: &Palette, cx: &mut Context<Self>) -> AnyElement {
+        let changed = self.changes.read(cx).count();
+        let item = |id: &'static str, icon: &'static str, label: &'static str, mode: Mode| {
+            let active = self.mode == mode;
+            div()
+                .id(id)
+                .h(rpx(26.))
+                .flex()
+                .items_center()
+                .gap(rpx(8.))
+                .px(rpx(10.))
+                .rounded(px(4.))
+                .cursor_pointer()
+                .text_size(ts::BODY)
+                .text_color(if active { p.fg } else { p.fg2 })
+                .when(active, |d| d.bg(p.sel).font_weight(FontWeight::SEMIBOLD))
+                .when(!active, |d| d.hover(|s| s.bg(p.hover)))
+                .on_click(cx.listener(move |this, _, window, cx| this.set_mode(mode, window, cx)))
+                .child(svg().path(icon).size(rpx(14.)).text_color(p.fg3))
+                .child(div().flex_1().child(label))
+        };
+        div()
+            .flex_none()
+            .flex()
+            .flex_col()
+            .gap(rpx(1.))
+            .p(rpx(4.))
+            .border_b_1()
+            .border_color(p.bd)
+            .child(
+                item(
+                    "nav-changes",
+                    "icons/sh-file-diff.svg",
+                    "Local Changes",
+                    Mode::Changes,
+                )
+                .when(changed > 0, |d| {
+                    d.child(
+                        div()
+                            .px(rpx(6.))
+                            .rounded(px(8.))
+                            .bg(p.acc.opacity(0.16))
+                            .font_family(MONO)
+                            .text_size(ts::CAPTION)
+                            .text_color(p.acc)
+                            .child(changed.to_string()),
+                    )
+                }),
+            )
+            .child(item(
+                "nav-commits",
+                "icons/sh-git-commit-horizontal.svg",
+                "All Commits",
+                Mode::Commits,
+            ))
             .into_any_element()
     }
 
@@ -771,7 +872,10 @@ impl RepoView {
                     .when(current, |d| d.font_weight(FontWeight::SEMIBOLD))
                     .when(selected, |d| d.bg(p.sel))
                     .hover(|s| s.bg(p.hover))
-                    .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| {
+                    .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
+                        if this.mode != Mode::Commits {
+                            this.set_mode(Mode::Commits, window, cx);
+                        }
                         if ev.click_count() >= 2 {
                             // Double click: show only this ref's history (again: all).
                             let scope = if this.scope == Scope::Revs(vec![rev.clone()]) {
@@ -1145,24 +1249,49 @@ impl Render for RepoView {
             .on_action(
                 cx.listener(|this, _: &actions::CopyCommitId, _, cx| this.copy_commit_id(cx)),
             )
-            .when(self.sidebar, |d| d.child(self.render_sidebar(&p, cx)))
-            .child(
-                div().flex_1().min_w_0().h_full().child(
-                    v_resizable("graph-details")
-                        .with_state(&self.details_split)
-                        .child(
-                            resizable_panel()
-                                .size_range(rem * (120. / 13.)..gpui_kit::Pixels::MAX)
-                                .child(self.render_graph(&p, cx)),
-                        )
-                        .child(
-                            resizable_panel()
-                                .size(rem * (400. / 13.))
-                                .size_range(rem * (140. / 13.)..gpui_kit::Pixels::MAX)
-                                .child(self.details.clone()),
-                        ),
-                ),
+            .on_action(
+                cx.listener(|this, _: &actions::ShowLocalChanges, window, cx| {
+                    this.set_mode(Mode::Changes, window, cx)
+                }),
             )
+            .on_action(cx.listener(|this, _: &actions::ShowCommits, window, cx| {
+                this.set_mode(Mode::Commits, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::StageAll, _, cx| {
+                this.changes.update(cx, |c, cx| c.stage_all(cx))
+            }))
+            .on_action(cx.listener(|this, _: &actions::UnstageAll, _, cx| {
+                this.changes.update(cx, |c, cx| c.unstage_all(cx))
+            }))
+            .when(self.sidebar, |d| d.child(self.render_sidebar(&p, cx)))
+            .when(self.mode == Mode::Changes, |d| {
+                d.child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .h_full()
+                        .child(self.changes.clone()),
+                )
+            })
+            .when(self.mode == Mode::Commits, |d| {
+                d.child(
+                    div().flex_1().min_w_0().h_full().child(
+                        v_resizable("graph-details")
+                            .with_state(&self.details_split)
+                            .child(
+                                resizable_panel()
+                                    .size_range(rem * (120. / 13.)..gpui_kit::Pixels::MAX)
+                                    .child(self.render_graph(&p, cx)),
+                            )
+                            .child(
+                                resizable_panel()
+                                    .size(rem * (400. / 13.))
+                                    .size_range(rem * (140. / 13.)..gpui_kit::Pixels::MAX)
+                                    .child(self.details.clone()),
+                            ),
+                    ),
+                )
+            })
     }
 }
 

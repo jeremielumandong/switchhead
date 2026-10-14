@@ -14,70 +14,32 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui_kit::AppContext as _;
-use gpui_kit::component::ActiveTheme as _;
-use gpui_kit::component::Sizable as _;
-use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::highlighter::HighlightTheme;
-use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::resizable::{ResizableState, h_resizable, resizable_panel};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    FontWeight, HighlightStyle, Hsla, InteractiveElement as _, IntoElement,
-    ListHorizontalSizingBehavior, ParentElement as _, Render, ScrollStrategy, SharedString,
-    StatefulInteractiveElement as _, Styled as _, StyledText, Subscription, Task,
+    FontWeight, InteractiveElement as _, IntoElement, ParentElement as _, Render, ScrollStrategy,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task,
     UniformListScrollHandle, Window, div, px, uniform_list,
 };
 use switchhead_git::commit::{self, CommitInfo};
-use switchhead_git::diff::{self, FileChange, FileDiff, FileStatus, LineKind, TextDiff};
+use switchhead_git::diff::{self, FileChange};
 use switchhead_git::refs::Label;
 use switchhead_git::{Oid, Repo};
 
 use crate::actions;
 use crate::appearance::{rpx, ts};
-use crate::diff_model::{self, Row, SbsRow, Syntax};
+use crate::diff_view::{
+    self, Content, Loaded, highlight_theme, set_prefs, status_badge, theme_key,
+};
 use crate::file_list::{self, FileRow};
-use crate::store::{DiffPrefs, WhitespacePref};
+use crate::store::DiffPrefs;
 use crate::theme::{MONO, Palette, palette};
 use crate::ui;
 
-/// Diff and file-list row height at 100 % zoom.
-const ROW_H: f32 = 20.0;
-
 /// The user clicked a parent: select that commit in the graph.
 pub struct Navigate(pub Oid);
-
-/// What the selected file's diff shows.
-enum Content {
-    Text {
-        diff: TextDiff,
-        inline: Vec<Row>,
-        sbs: Vec<SbsRow>,
-        widest: Option<usize>,
-        syntax: Option<Syntax>,
-    },
-    Binary {
-        old: Option<u64>,
-        new: Option<u64>,
-    },
-    TooLarge {
-        old: Option<u64>,
-        new: Option<u64>,
-    },
-    Submodule {
-        old: Option<Oid>,
-        new: Option<Oid>,
-    },
-    Failed(String),
-}
-
-/// A loaded file diff and what it was computed with.
-struct Loaded {
-    file: usize,
-    prefs: DiffPrefs,
-    theme: usize,
-    content: Content,
-}
 
 /// The details pane.
 pub struct CommitView {
@@ -643,54 +605,8 @@ impl CommitView {
     // ---------------------------------------------------------------- diff
 
     fn render_diff_toolbar(&self, p: &Palette, cx: &App) -> AnyElement {
-        let prefs = *cx.global::<DiffPrefs>();
         let file = self.selected_file.and_then(|i| self.files.get(i));
-        let stats = self.loaded.as_ref().and_then(|l| match &l.content {
-            Content::Text { diff, .. } => Some(diff.stats()),
-            _ => None,
-        });
-        let ws_label = match prefs.whitespace {
-            WhitespacePref::Show => "Whitespace",
-            WhitespacePref::IgnoreChanges => "Ignore amount",
-            WhitespacePref::IgnoreAll => "Ignore all",
-        };
-        let ws_menu = Button::new("whitespace")
-            .ghost()
-            .xsmall()
-            .label(ws_label)
-            .dropdown_menu(move |mut menu, _, cx| {
-                let cur = cx.global::<DiffPrefs>().whitespace;
-                for (label, w) in [
-                    ("Show whitespace changes", WhitespacePref::Show),
-                    (
-                        "Ignore changes in amount (-b)",
-                        WhitespacePref::IgnoreChanges,
-                    ),
-                    ("Ignore all whitespace (-w)", WhitespacePref::IgnoreAll),
-                ] {
-                    menu = menu.item(
-                        PopupMenuItem::new(label)
-                            .checked(cur == w)
-                            .on_click(move |_, _, cx| set_prefs(cx, |p| p.whitespace = w)),
-                    );
-                }
-                menu
-            });
-        let context = prefs.context;
-        let small_btn = |id: &'static str, label: &'static str, enabled: bool| {
-            div()
-                .id(id)
-                .flex_none()
-                .size(rpx(18.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(4.))
-                .text_size(ts::BODY)
-                .text_color(if enabled { p.fg2 } else { p.fg3.opacity(0.5) })
-                .when(enabled, |d| d.cursor_pointer().hover(|s| s.bg(p.hover)))
-                .child(label)
-        };
+        let stats = self.loaded.as_ref().and_then(|l| l.content.stats());
         div()
             .h(rpx(30.))
             .flex_none()
@@ -726,162 +642,21 @@ impl CommitView {
                         )
                     })
                     .when_some(stats, |d, (added, removed)| {
-                        d.child(
-                            div()
-                                .flex_none()
-                                .font_family(MONO)
-                                .text_size(ts::SMALL)
-                                .text_color(p.added)
-                                .child(format!("+{added}")),
-                        )
-                        .child(
-                            div()
-                                .flex_none()
-                                .font_family(MONO)
-                                .text_size(ts::SMALL)
-                                .text_color(p.deleted)
-                                .child(format!("−{removed}")),
-                        )
+                        d.children(diff_view::stats_chips(added, removed, p))
                     }),
             )
-            .child(
-                div()
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .gap(rpx(2.))
-                    .text_size(ts::SMALL)
-                    .text_color(p.fg2)
-                    .child(
-                        small_btn("ctx-less", "−", context > 0).on_click(|_, _, cx| {
-                            set_prefs(cx, |p| p.context = p.context.saturating_sub(1))
-                        }),
-                    )
-                    .child(
-                        div()
-                            .min_w(rpx(64.))
-                            .flex()
-                            .justify_center()
-                            .child(SharedString::from(format!("{context} lines"))),
-                    )
-                    .child(
-                        small_btn("ctx-more", "+", context < DiffPrefs::MAX_CONTEXT).on_click(
-                            |_, _, cx| {
-                                set_prefs(cx, |p| {
-                                    p.context = (p.context + 1).min(DiffPrefs::MAX_CONTEXT)
-                                })
-                            },
-                        ),
-                    ),
-            )
-            .child(ws_menu)
-            .child(ui::segmented(
-                "diff-layout",
-                vec![
-                    (
-                        "Inline".into(),
-                        !prefs.side_by_side,
-                        Box::new(|_, _, cx: &mut App| set_prefs(cx, |p| p.side_by_side = false)),
-                    ),
-                    (
-                        "Side by side".into(),
-                        prefs.side_by_side,
-                        Box::new(|_, _, cx: &mut App| set_prefs(cx, |p| p.side_by_side = true)),
-                    ),
-                ],
-                18.,
-                p,
-            ))
+            .child(diff_view::settings(p, true, cx))
             .into_any_element()
     }
 
     fn render_diff(&self, p: &Palette, row_h: f32, cx: &mut Context<Self>) -> AnyElement {
-        let message = |text: String, color: Hsla| {
-            div()
-                .flex_1()
-                .flex()
-                .items_center()
-                .justify_center()
-                .p(rpx(16.))
-                .text_color(color)
-                .child(SharedString::from(text))
-                .into_any_element()
-        };
-        let Some(loaded) = self.loaded.clone() else {
-            return if self.diff_loading || self.loading {
-                div().flex_1().into_any_element()
-            } else if self.files.is_empty() && self.info.is_some() {
-                message("This commit changes no files.".into(), p.fg3)
-            } else {
-                message("Select a file to see its changes.".into(), p.fg3)
-            };
-        };
-        let side_by_side = loaded.prefs.side_by_side;
-        match &loaded.content {
-            Content::Binary { old, new } => {
-                message(format!("Binary file ({})", sizes(*old, *new)), p.fg3)
+        match &self.loaded {
+            Some(loaded) => diff_view::body(loaded, &self.diff_scroll, row_h, p, cx),
+            None if self.diff_loading || self.loading => div().flex_1().into_any_element(),
+            None if self.files.is_empty() && self.info.is_some() => {
+                diff_view::message("This commit changes no files.", p.fg3)
             }
-            Content::TooLarge { old, new } => message(
-                format!("File too large to show ({})", sizes(*old, *new)),
-                p.fg3,
-            ),
-            Content::Submodule { old, new } => message(
-                format!(
-                    "Submodule {} → {}",
-                    old.map_or("none".into(), |o| switchhead_git::short(&o)),
-                    new.map_or("none".into(), |o| switchhead_git::short(&o)),
-                ),
-                p.fg2,
-            ),
-            Content::Failed(e) => message(e.clone(), p.deleted),
-            Content::Text { diff, .. } if diff.is_empty() => message(
-                if loaded.prefs.whitespace == WhitespacePref::Show {
-                    "No text changes (mode or rename only).".into()
-                } else {
-                    "Only whitespace changes.".into()
-                },
-                p.fg3,
-            ),
-            Content::Text {
-                inline,
-                sbs,
-                widest,
-                ..
-            } => {
-                let count = if side_by_side {
-                    sbs.len()
-                } else {
-                    inline.len()
-                };
-                let widest = *widest;
-                let list = uniform_list(
-                    "diff",
-                    count,
-                    cx.processor(move |this, range: Range<usize>, _w, cx| {
-                        let p = palette(cx);
-                        let Some(loaded) = this.loaded.clone() else {
-                            return Vec::new();
-                        };
-                        range
-                            .map(|i| render_diff_row(&loaded, i, &p, row_h))
-                            .collect::<Vec<_>>()
-                    }),
-                )
-                .track_scroll(&self.diff_scroll)
-                .flex_1()
-                .min_h_0()
-                .font_family(crate::appearance::editor_font_family(cx))
-                .text_size(crate::appearance::editor_font_size(cx));
-                if side_by_side {
-                    list.into_any_element()
-                } else {
-                    list.with_width_from_item(widest)
-                        .with_horizontal_sizing_behavior(
-                            ListHorizontalSizingBehavior::Unconstrained,
-                        )
-                        .into_any_element()
-                }
-            }
+            None => diff_view::message("Select a file to see its changes.", p.fg3),
         }
     }
 }
@@ -900,34 +675,7 @@ fn compute(repo: &Repo, f: &FileChange, prefs: &DiffPrefs, theme: &Arc<Highlight
         (Err(e), _) | (_, Err(e)) => return Content::Failed(e.to_string()),
     };
     let started = std::time::Instant::now();
-    let content = match diff::diff_bytes(old.as_deref(), new.as_deref(), &prefs.options()) {
-        FileDiff::Binary { old_size, new_size } => Content::Binary {
-            old: old_size,
-            new: new_size,
-        },
-        FileDiff::TooLarge { old_size, new_size } => Content::TooLarge {
-            old: old_size,
-            new: new_size,
-        },
-        FileDiff::Text(d) => {
-            let inline = diff_model::inline_rows(&d);
-            let sbs = diff_model::sbs_rows(&d);
-            let widest = diff_model::widest_row(&d, &inline);
-            let syntax = diff_model::language_for(&f.path).and_then(|lang| {
-                let text = |b: &Option<Vec<u8>>| {
-                    String::from_utf8_lossy(b.as_deref().unwrap_or_default()).into_owned()
-                };
-                diff_model::highlight(&d, &text(&old), &text(&new), lang, theme)
-            });
-            Content::Text {
-                diff: d,
-                inline,
-                sbs,
-                widest,
-                syntax,
-            }
-        }
-    };
+    let content = Content::from_bytes(&f.path, old.as_deref(), new.as_deref(), prefs, theme);
     tracing::debug!(
         path = %f.path.display(),
         ms = started.elapsed().as_millis() as u64,
@@ -936,235 +684,11 @@ fn compute(repo: &Repo, f: &FileChange, prefs: &DiffPrefs, theme: &Arc<Highlight
     content
 }
 
-fn render_diff_row(loaded: &Loaded, i: usize, p: &Palette, row_h: f32) -> AnyElement {
-    let Content::Text {
-        diff,
-        inline,
-        sbs,
-        syntax,
-        ..
-    } = &loaded.content
-    else {
-        return div().into_any_element();
-    };
-    let row = div()
-        .id(("diff", i))
-        .w_full()
-        .h(px(row_h))
-        .flex()
-        .items_center();
-    let hunk_row = |h: u32| {
-        let Some(h) = diff.hunks().get(h as usize) else {
-            return div().into_any_element();
-        };
-        let mut text = format!(
-            "@@ -{},{} +{},{} @@",
-            h.old_start, h.old_lines, h.new_start, h.new_lines
-        );
-        if !h.section.is_empty() {
-            text.push(' ');
-            text.push_str(&h.section);
-        }
-        div()
-            .id(("diff", i))
-            .w_full()
-            .h(px(row_h))
-            .flex()
-            .items_center()
-            .px(rpx(8.))
-            .bg(p.panel)
-            .text_color(p.fg3)
-            .whitespace_nowrap()
-            .child(SharedString::from(text))
-            .into_any_element()
-    };
-    if loaded.prefs.side_by_side {
-        match sbs.get(i) {
-            Some(SbsRow::Hunk(h)) => hunk_row(*h),
-            Some(SbsRow::Pair(old, new)) => row
-                .child(side_cell(diff, syntax.as_ref(), *old, true, p))
-                .child(div().w(px(1.)).h_full().flex_none().bg(p.bd))
-                .child(side_cell(diff, syntax.as_ref(), *new, false, p))
-                .into_any_element(),
-            None => row.into_any_element(),
-        }
-    } else {
-        match inline.get(i) {
-            Some(Row::Hunk(h)) => hunk_row(*h),
-            Some(Row::Line(l)) => {
-                let l = *l as usize;
-                let line = diff.line(l);
-                let (bg, sign) = line_colors(line.kind, p);
-                row.when_some(bg, |d, bg| d.bg(bg))
-                    .child(gutter(line.old_no, p))
-                    .child(gutter(line.new_no, p))
-                    .child(
-                        div()
-                            .w(rpx(16.))
-                            .flex_none()
-                            .flex()
-                            .justify_center()
-                            .text_color(sign)
-                            .child(line.kind.prefix().to_string()),
-                    )
-                    .child(
-                        div()
-                            .flex_none()
-                            .pr(rpx(16.))
-                            .whitespace_nowrap()
-                            .text_color(p.fg)
-                            .child(line_text(diff, syntax.as_ref(), l, p)),
-                    )
-                    .into_any_element()
-            }
-            None => row.into_any_element(),
-        }
-    }
-}
-
-/// One half of a side-by-side row.
-fn side_cell(
-    diff: &TextDiff,
-    syntax: Option<&Syntax>,
-    line: Option<u32>,
-    old: bool,
-    p: &Palette,
-) -> AnyElement {
-    let cell = div()
-        .flex_1()
-        .min_w_0()
-        .h_full()
-        .flex()
-        .items_center()
-        .overflow_hidden();
-    let Some(l) = line else {
-        return cell.bg(p.panel.opacity(0.6)).into_any_element();
-    };
-    let l = l as usize;
-    let d = diff.line(l);
-    let (bg, sign) = line_colors(d.kind, p);
-    cell.when_some(bg, |c, bg| c.bg(bg))
-        .child(gutter(if old { d.old_no } else { d.new_no }, p))
-        .child(
-            div()
-                .w(rpx(14.))
-                .flex_none()
-                .flex()
-                .justify_center()
-                .text_color(sign)
-                .child(if d.kind == LineKind::Context {
-                    String::new()
-                } else {
-                    d.kind.prefix().to_string()
-                }),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .text_color(p.fg)
-                .child(line_text(diff, syntax, l, p)),
-        )
-        .into_any_element()
-}
-
-/// A line's text with syntax colors and changed-word backgrounds.
-fn line_text(diff: &TextDiff, syntax: Option<&Syntax>, l: usize, p: &Palette) -> StyledText {
-    let kind = diff.line(l).kind;
-    let words: Vec<Range<usize>> = diff.word_ranges(l).collect();
-    let word = HighlightStyle {
-        background_color: Some(match kind {
-            LineKind::Added => p.added.opacity(0.24),
-            _ => p.deleted.opacity(0.24),
-        }),
-        ..Default::default()
-    };
-    let spans =
-        diff_model::merge_styles(syntax.map(|s| s.line(l)).unwrap_or_default(), &words, word);
-    let (text, spans) = diff_model::expand_tabs(diff.text(l), spans);
-    StyledText::new(text).with_highlights(spans)
-}
-
-/// Line-number cell.
-fn gutter(no: Option<u32>, p: &Palette) -> AnyElement {
-    div()
-        .w(rpx(44.))
-        .flex_none()
-        .pr(rpx(8.))
-        .flex()
-        .justify_end()
-        .text_color(p.fg3)
-        .child(no.map(|n| n.to_string()).unwrap_or_default())
-        .into_any_element()
-}
-
-/// Row background and the `+`/`-` color for a line kind.
-fn line_colors(kind: LineKind, p: &Palette) -> (Option<Hsla>, Hsla) {
-    match kind {
-        LineKind::Context => (None, p.fg3),
-        LineKind::Added => (Some(p.added_bg), p.added),
-        LineKind::Removed => (Some(p.deleted_bg), p.deleted),
-    }
-}
-
-/// The one-letter status badge of a changed file.
-fn status_badge(s: FileStatus, p: &Palette) -> AnyElement {
-    let color = match s {
-        FileStatus::Added | FileStatus::Copied => p.added,
-        FileStatus::Deleted => p.deleted,
-        FileStatus::Renamed => p.acc,
-        _ => p.modified,
-    };
-    div()
-        .flex_none()
-        .size(rpx(15.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(3.))
-        .bg(color.opacity(0.16))
-        .text_color(color)
-        .font_family(MONO)
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_size(ts::CAPTION)
-        .child(s.letter().to_string())
-        .into_any_element()
-}
-
-/// Change the diff settings (every tab follows; the workspace saves them).
-pub(crate) fn set_prefs(cx: &mut App, f: impl FnOnce(&mut DiffPrefs)) {
-    let mut prefs = *cx.global::<DiffPrefs>();
-    f(&mut prefs);
-    if prefs != *cx.global::<DiffPrefs>() {
-        cx.set_global(prefs);
-    }
-}
-
-fn highlight_theme(cx: &App) -> Arc<HighlightTheme> {
-    cx.theme().highlight_theme.clone()
-}
-
-/// Identity of a highlight theme (a new theme is a new `Arc`).
-fn theme_key(t: &Arc<HighlightTheme>) -> usize {
-    Arc::as_ptr(t) as usize
-}
-
 /// `src/app/main.rs` → (`Some("src/app")`, `main.rs`).
 fn split_path(path: &str) -> (Option<SharedString>, SharedString) {
     match path.rsplit_once('/') {
         Some((dir, file)) => (Some(dir.to_owned().into()), file.to_owned().into()),
         None => (None, path.to_owned().into()),
-    }
-}
-
-/// "1.2 KB → 3.4 KB", or one size for an added or deleted file.
-fn sizes(old: Option<u64>, new: Option<u64>) -> String {
-    match (old, new) {
-        (Some(o), Some(n)) => format!("{} → {}", ui::bytes(o), ui::bytes(n)),
-        (Some(s), None) | (None, Some(s)) => ui::bytes(s),
-        (None, None) => String::new(),
     }
 }
 
@@ -1223,10 +747,8 @@ impl Focusable for CommitView {
 impl Render for CommitView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
-        let zoom = crate::appearance::zoom(cx);
-        let font: f32 = crate::appearance::editor_font_size(cx).into();
-        let row_h = (ROW_H * zoom).max(font * 1.45).round();
-        let file_row_h = (22. * zoom).round();
+        let row_h = diff_view::row_height(cx);
+        let file_row_h = (22. * crate::appearance::zoom(cx)).round();
         let root = div()
             .id("commit-view")
             .key_context("Files")
@@ -1299,13 +821,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn formats_paths_and_sizes() {
+    fn splits_paths() {
         let (dir, file) = split_path("src/app/main.rs");
         assert_eq!(dir.as_deref(), Some("src/app"));
         assert_eq!(file.as_ref(), "main.rs");
         assert_eq!(split_path("README").0, None);
-        assert_eq!(sizes(None, Some(2048)), ui::bytes(2048));
-        assert!(sizes(Some(1), Some(2)).contains('→'));
     }
 
     #[test]

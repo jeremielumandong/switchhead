@@ -114,7 +114,12 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 
 ## M3 — Local changes (Fork parity)
 
-- [ ] M3-1 Local Changes view: unstaged / staged lists, stage / unstage file, all, selected.
+- [x] M3-1 Local Changes view: unstaged / staged lists, stage / unstage file, all, selected.
+  *`changes_view.rs` (sidebar "Local Changes" / "All Commits"): two virtualized lists with
+  click, Ctrl/Cmd-click, Shift-click, arrows, Space/Enter, double-click, Stage/Unstage
+  selected and all; the focused file's `git diff` (or new file's content). Status re-reads
+  on open, Refresh, index changes and window focus. The diff body moved to `diff_view.rs`,
+  shared with the commit pane. Local diffs have no syntax colors yet (Follow-ups).*
 - [ ] M3-2 Hunk and line staging, unstaging and discarding from the diff view.
 - [ ] M3-3 Commit box: subject/body, amend (loads previous message), sign-off, skip hooks,
       commit message templates, recent messages, spell check, char counters.
@@ -207,3 +212,11 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   whitespace-only word ranges when whitespace is ignored.
 - Merge commits: offer a diff against each parent (and the combined diff), not only the
   first parent.
+- Local Changes diffs have no syntax colors or word highlights: read the index blob and
+  the work-tree file to highlight them, and pair runs as for commit diffs.
+- Local Changes ignores the whitespace setting (`git diff` without `-b` / `-w`); offer it
+  for viewing while keeping hunk staging on the real lines.
+- Fork shows an "Uncommitted changes" row at the top of the graph; add one that opens
+  Local Changes.
+- Work-tree edits made while switchhead is in front show only on Refresh or the next
+  focus change; a watcher (`notify`, pending approval) would catch them live.

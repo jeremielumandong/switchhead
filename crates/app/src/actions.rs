@@ -40,6 +40,13 @@ actions!(
         CycleWhitespace,
         MoreContext,
         LessContext,
+        ShowLocalChanges,
+        ShowCommits,
+        StageAll,
+        UnstageAll,
+        ToggleStaged,
+        SelectAllFiles,
+        SwitchFileList,
     ]
 );
 
@@ -86,6 +93,10 @@ pub fn commands() -> Vec<Command> {
             true,
         ),
         c("Copy Commit ID", "History", CopyCommitId, true),
+        c("Show Local Changes", "Changes", ShowLocalChanges, true),
+        c("Show All Commits", "History", ShowCommits, true),
+        c("Stage All Changes", "Changes", StageAll, true),
+        c("Unstage All Changes", "Changes", UnstageAll, true),
         c(
             "Toggle Inline / Side-by-Side Diff",
             "Diff",
@@ -145,6 +156,14 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("secondary-p", QuickLaunch, None),
         KeyBinding::new("secondary-,", ShowSettings, None),
         KeyBinding::new("secondary-shift-c", CopyCommitId, Some("Graph")),
+        KeyBinding::new("up", SelectUp, Some("Changes")),
+        KeyBinding::new("down", SelectDown, Some("Changes")),
+        KeyBinding::new("home", SelectFirst, Some("Changes")),
+        KeyBinding::new("end", SelectLast, Some("Changes")),
+        KeyBinding::new("space", ToggleStaged, Some("Changes")),
+        KeyBinding::new("enter", ToggleStaged, Some("Changes")),
+        KeyBinding::new("secondary-a", SelectAllFiles, Some("Changes")),
+        KeyBinding::new("tab", SwitchFileList, Some("Changes")),
     ]);
 }
 

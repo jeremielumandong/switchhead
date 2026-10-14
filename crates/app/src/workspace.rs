@@ -20,7 +20,7 @@ use switchhead_git::discover::{self, Target};
 
 use crate::actions;
 use crate::appearance::{self, rpx, ts};
-use crate::commit_view::set_prefs;
+use crate::diff_view::set_prefs;
 use crate::manager::ManagerState;
 use crate::palette::{Chip, PaletteEvent, PaletteView, RepoItem, Sources};
 use crate::repo_view::{OpStatus, RepoView};
@@ -106,7 +106,7 @@ impl Workspace {
             if window.is_window_active()
                 && let Some(v) = this.active_repo()
             {
-                v.update(cx, |v, cx| v.check_changes(cx));
+                v.update(cx, |v, cx| v.activated(cx));
             }
         });
         let reopen = state.open_tabs.clone();
