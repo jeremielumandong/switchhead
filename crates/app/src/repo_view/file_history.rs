@@ -1,4 +1,5 @@
-//! Opening a file's history and blame ([`FileView`]) in place of the graph.
+//! Opening a file's history and blame ([`FileView`]) in place of the graph, and closing
+//! it or the reflog view.
 
 use std::path::PathBuf;
 
@@ -21,21 +22,23 @@ impl RepoView {
         let tab = if blame { Tab::Blame } else { Tab::History };
         let view = cx.new(|cx| FileView::new(repo, path, rev, tab, cx));
         let sub = cx.subscribe(&view, |this, _, ev, cx| match ev {
-            FileViewEvent::Close => this.close_file_view(cx),
+            FileViewEvent::Close => this.close_overlay(cx),
             FileViewEvent::Reveal(id) => {
                 let id = *id;
-                this.close_file_view(cx);
+                this.close_overlay(cx);
                 this.mode = Mode::Commits;
                 this.reveal(id, cx);
             }
         });
-        self.file_view = Some((view, sub));
+        self.overlay = Some((view.into(), sub));
+        self.reflog = None;
         cx.notify();
     }
 
-    /// Back to the graph or Local Changes.
-    pub(super) fn close_file_view(&mut self, cx: &mut Context<Self>) {
-        if self.file_view.take().is_some() {
+    /// Close the file or reflog view: back to the graph or Local Changes.
+    pub(super) fn close_overlay(&mut self, cx: &mut Context<Self>) {
+        self.reflog = None;
+        if self.overlay.take().is_some() {
             self.refocus = true;
         }
         cx.notify();

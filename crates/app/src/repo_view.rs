@@ -45,6 +45,7 @@ mod commit_menu;
 mod file_history;
 mod form;
 mod rebase;
+mod reflog;
 mod remote_ops;
 mod search;
 mod section_menu;
@@ -153,8 +154,10 @@ pub struct RepoView {
     activity_collapsed: HashSet<u64>,
     /// The commit search bar above the graph.
     search: Option<search::Search>,
-    /// A file's history and blame, shown in place of the graph or Local Changes.
-    file_view: Option<(Entity<crate::file_view::FileView>, Subscription)>,
+    /// A file's history and blame or a reflog, shown in place of the graph or Local Changes.
+    overlay: Option<(gpui_kit::AnyView, Subscription)>,
+    /// The reflog view, when the overlay is one (reloaded when refs change).
+    reflog: Option<gpui_kit::WeakEntity<crate::reflog_view::ReflogView>>,
     /// Focus the current mode at the next render (the file view closed).
     refocus: bool,
     /// The interactive rebase editor, shown in place of the graph.
@@ -231,7 +234,8 @@ impl RepoView {
             activity_open: false,
             activity_collapsed: HashSet::new(),
             rebase: None,
-            file_view: None,
+            overlay: None,
+            reflog: None,
             refocus: false,
             search: None,
             details,
@@ -310,7 +314,8 @@ impl RepoView {
     /// Show the graph or Local Changes, and focus it.
     pub fn set_mode(&mut self, mode: Mode, window: &mut Window, cx: &mut Context<Self>) {
         self.mode = mode;
-        self.file_view = None;
+        self.overlay = None;
+        self.reflog = None;
         match mode {
             Mode::Commits => window.focus(&self.focus, cx),
             Mode::Changes => {
@@ -394,6 +399,9 @@ impl RepoView {
                 }
                 self.decorations = refs.decorations();
                 self.refs = *refs;
+                if let Some(r) = self.reflog.as_ref().and_then(|r| r.upgrade()) {
+                    r.update(cx, |r, cx| r.reload(cx));
+                }
                 self.rebuild_side();
                 self.sync_details(true, cx);
             }
@@ -1034,6 +1042,9 @@ impl Render for RepoView {
             .on_action(cx.listener(|this, _: &actions::FindCommits, window, cx| {
                 this.open_search(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &actions::ShowReflog, window, cx| {
+                this.open_reflog("HEAD".into(), window, cx)
+            }))
             .on_action(cx.listener(|this, _: &actions::StageAll, _, cx| {
                 this.changes.update(cx, |c, cx| c.stage_all(cx))
             }))
@@ -1068,29 +1079,26 @@ impl RepoView {
             .flex_1()
             .min_h_0()
             .flex()
-            .when_some(self.file_view.as_ref(), |d, (view, _)| {
+            .when_some(self.overlay.as_ref(), |d, (view, _)| {
                 d.child(div().flex_1().min_w_0().h_full().child(view.clone()))
             })
-            .when(
-                self.file_view.is_none() && self.mode == Mode::Changes,
-                |d| {
-                    d.child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .h_full()
-                            .child(self.changes.clone()),
-                    )
-                },
-            )
+            .when(self.overlay.is_none() && self.mode == Mode::Changes, |d| {
+                d.child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .h_full()
+                        .child(self.changes.clone()),
+                )
+            })
             .when_some(
                 self.rebase
                     .as_ref()
-                    .filter(|_| self.mode == Mode::Commits && self.file_view.is_none()),
+                    .filter(|_| self.mode == Mode::Commits && self.overlay.is_none()),
                 |d, (editor, _)| d.child(div().flex_1().min_w_0().h_full().child(editor.clone())),
             )
             .when(
-                self.mode == Mode::Commits && self.rebase.is_none() && self.file_view.is_none(),
+                self.mode == Mode::Commits && self.rebase.is_none() && self.overlay.is_none(),
                 |d| {
                     d.child(
                         div().flex_1().min_w_0().h_full().child(

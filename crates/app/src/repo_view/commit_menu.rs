@@ -25,7 +25,12 @@ impl RepoView {
         matches!(self.op, Some(OpStatus::Running { .. }))
     }
 
-    fn checkout_commit_dialog(&mut self, id: Oid, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn checkout_commit_dialog(
+        &mut self,
+        id: Oid,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let short = switchhead_git::short(&id);
         let this = cx.entity().downgrade();
         window.open_alert_dialog(cx, move |alert, _, _| {
@@ -68,7 +73,13 @@ impl RepoView {
         self.run_op("Reverting", "Reverted", move |r, _, _| r.revert(&rev), cx);
     }
 
-    fn reset_to(&mut self, id: Oid, mode: ResetMode, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn reset_to(
+        &mut self,
+        id: Oid,
+        mode: ResetMode,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let rev = id.to_string();
         let run = move |v: &mut RepoView, cx: &mut Context<RepoView>| {
             let rev = rev.clone();

@@ -26,6 +26,7 @@ mod omarchy;
 mod palette;
 mod rebase_editor;
 mod rebase_model;
+mod reflog_view;
 mod repo_view;
 mod sidebar_model;
 mod split;
