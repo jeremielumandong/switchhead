@@ -110,7 +110,8 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [x] M2-7 File system watcher: refresh status and refs when the work tree or `.git` changes.
   Note: `git::watch::fingerprint` polls `.git` metadata every second and when the window
   regains focus; a refs change reloads the graph. Work-tree status refresh lands with M3-1
-  (it reuses the index fingerprint and window focus; `notify` awaits a decision).
+  (it reuses the index fingerprint and window focus). Now `git::watch::Watcher` (`notify`)
+  sends native events for `.git` and the work tree, and the poll slows to every 10 s.
 
 ## M3 — Local changes (Fork parity)
 
