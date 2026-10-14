@@ -196,5 +196,11 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
   the first batch takes 1.9 s without it and 94 ms with it.
 - `gix::path::from_bstr` returns a `Result` (non-UTF-8 paths fail on Windows); status paths
   fall back to a lossy conversion.
+- gix's topo walk does not read `.git/shallow`: on a shallow clone it fails with "object
+  could not be found" at the boundary. `log::walk` wraps the object store (`ShallowCut`) so
+  boundary commits read as having no parents.
+- The app reads `SWITCHHEAD_DATA` (data folder), `SWITCHHEAD_THEME` and `SWITCHHEAD_ZOOM`;
+  screenshots: `Xvfb :99 &`, then `DISPLAY=:99 SWITCHHEAD_DATA=<tmp> switchhead <repo>` and
+  `import -window root shot.png` (ImageMagick); `xdotool` drives clicks and keys.
 - Git for Windows sets `core.autocrlf=true` in its system config, so `git apply` to the work
   tree writes CRLF there. `TestRepo` turns it off; tests that compare file bytes rely on that.
