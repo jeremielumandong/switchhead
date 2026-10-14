@@ -46,6 +46,7 @@ mod form;
 mod rebase;
 mod remote_ops;
 mod sidebar;
+mod tag_ops;
 
 use sidebar::{Section, SideRow};
 
@@ -995,6 +996,10 @@ impl Render for RepoView {
             .on_action(cx.listener(|this, _: &actions::NewBranch, window, cx| {
                 this.new_branch_at_selection(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &actions::NewTag, window, cx| {
+                this.new_tag_at_selection(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::PushAllTags, _, cx| this.push_all_tags(cx)))
             .on_action(cx.listener(|this, _: &actions::StageAll, _, cx| {
                 this.changes.update(cx, |c, cx| c.stage_all(cx))
             }))

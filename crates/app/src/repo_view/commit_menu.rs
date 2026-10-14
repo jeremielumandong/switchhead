@@ -9,7 +9,6 @@ use gpui_kit::{App, ClipboardItem, Context, PathPromptOptions, WeakEntity, Windo
 use switchhead_git::ops::ResetMode;
 use switchhead_git::{Oid, web};
 
-use super::form::Form;
 use super::{OpStatus, RepoView};
 
 impl RepoView {
@@ -52,36 +51,6 @@ impl RepoView {
                     true
                 })
         });
-    }
-
-    fn new_tag_dialog(&mut self, id: Oid, window: &mut Window, cx: &mut Context<Self>) {
-        let form = Form {
-            title: "New Tag".into(),
-            description: format!(
-                "A lightweight tag on commit {}.",
-                switchhead_git::short(&id)
-            ),
-            ok: "Create Tag",
-            danger: false,
-            name: Some(String::new()),
-            placeholder: "Tag name",
-            taken: self.refs.tags.iter().map(|t| t.name.clone()).collect(),
-            checks: Vec::new(),
-        };
-        self.open_form(
-            form,
-            move |v, a, cx| {
-                let rev = id.to_string();
-                v.run_op(
-                    "Creating tag",
-                    "Tag created",
-                    move |r, _, _| r.create_tag(&a.name, &rev, None),
-                    cx,
-                );
-            },
-            window,
-            cx,
-        );
     }
 
     fn cherry_pick(&mut self, id: Oid, cx: &mut Context<Self>) {
@@ -256,7 +225,10 @@ pub(super) fn build_commit_menu(
         .item(
             PopupMenuItem::new("New Tag Here…")
                 .disabled(busy)
-                .on_click(act(Box::new(move |v, w, cx| v.new_tag_dialog(id, w, cx)))),
+                .on_click(act(Box::new(move |v, w, cx| {
+                    let short = switchhead_git::short(&id);
+                    v.new_tag_dialog(id.to_string(), format!("commit {short}"), w, cx)
+                }))),
         )
         .separator()
         .item(

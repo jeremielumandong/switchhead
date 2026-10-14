@@ -43,6 +43,7 @@ impl RepoView {
             name: None,
             placeholder: "Branch name",
             taken: Vec::new(),
+            message: None,
             checks,
         };
         self.open_form(
@@ -86,6 +87,7 @@ impl RepoView {
             name: None,
             placeholder: "Branch name",
             taken: Vec::new(),
+            message: None,
             checks: vec![
                 ("Rebase local commits instead of merging", false),
                 ("Stash and reapply local changes", true),
@@ -123,6 +125,7 @@ impl RepoView {
                     name: None,
                     placeholder: "Branch name",
                     taken: Vec::new(),
+                    message: None,
                     checks: Vec::new(),
                 },
                 |_, _, _| {},
@@ -153,6 +156,7 @@ impl RepoView {
                     name: None,
                     placeholder: "Branch name",
                     taken: Vec::new(),
+                    message: None,
                     checks: Vec::new(),
                 },
                 |_, _, _| {},
@@ -170,6 +174,7 @@ impl RepoView {
             name: None,
             placeholder: "Branch name",
             taken: Vec::new(),
+            message: None,
             checks: vec![
                 ("Track it as the upstream", !has_upstream),
                 ("Push all tags", false),

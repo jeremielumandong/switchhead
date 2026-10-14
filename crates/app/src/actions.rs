@@ -50,6 +50,8 @@ actions!(
         WriteCommitMessage,
         DiscardSelected,
         NewBranch,
+        NewTag,
+        PushAllTags,
         ToggleActivity,
     ]
 );
@@ -103,6 +105,8 @@ pub fn commands() -> Vec<Command> {
         c("Unstage All Changes", "Changes", UnstageAll, true),
         c("Commit…", "Changes", WriteCommitMessage, true),
         c("New Branch…", "Branches", NewBranch, true),
+        c("New Tag…", "Tags", NewTag, true),
+        c("Push All Tags", "Tags", PushAllTags, true),
         c("Show / Hide Activity", "Window", ToggleActivity, true),
         c(
             "Toggle Inline / Side-by-Side Diff",

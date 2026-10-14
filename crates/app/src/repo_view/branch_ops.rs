@@ -35,6 +35,7 @@ impl RepoView {
             name: Some(String::new()),
             placeholder: "Branch name",
             taken: self.branch_names(),
+            message: None,
             checks: vec![("Check out the new branch", true)],
         };
         self.open_form(
@@ -84,6 +85,7 @@ impl RepoView {
             name: Some(old.clone()),
             placeholder: "Branch name",
             taken,
+            message: None,
             checks: Vec::new(),
         };
         self.open_form(
@@ -130,6 +132,7 @@ impl RepoView {
             name: None,
             placeholder: "Branch name",
             taken: Vec::new(),
+            message: None,
             checks,
         };
         self.open_form(
@@ -179,6 +182,7 @@ impl RepoView {
             name: None,
             placeholder: "Branch name",
             taken: Vec::new(),
+            message: None,
             checks: Vec::new(),
         };
         self.open_form(
@@ -255,7 +259,7 @@ impl RepoView {
     }
 
     /// `origin` when there is one, else the first remote.
-    fn default_remote(&self) -> Option<String> {
+    pub(super) fn default_remote(&self) -> Option<String> {
         let names = self.refs.remote_names();
         names
             .iter()
@@ -429,6 +433,19 @@ pub(super) fn build_ref_menu(
                         }))
                 });
             }
+        }
+        Target::Tag(t) => {
+            if has_remote {
+                let t1 = t.clone();
+                menu = menu.item(
+                    PopupMenuItem::new("Push Tag")
+                        .on_click(act(Box::new(move |v, _, cx| v.push_tag(t1.clone(), cx)))),
+                );
+            }
+            let t2 = t.clone();
+            menu = menu.item(PopupMenuItem::new("Delete…").on_click(act(Box::new(
+                move |v, window, cx| v.delete_tag_dialog(t2.clone(), window, cx),
+            ))));
         }
         Target::Remote(short) => {
             let s = short.clone();

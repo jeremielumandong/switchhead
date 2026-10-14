@@ -203,7 +203,11 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   `git::rebase::run`; a stop (conflict, `edit`) shows "Rebase paused: …" and the banner.
   `rebase::plan` now refuses a base outside HEAD's history, a squash message survives a
   later fixup in its group, and old todo/message folders are cleared.*
-- [ ] M4-6 Tags: create (lightweight / annotated), delete, push, checkout.
+- [x] M4-6 Tags: create (lightweight / annotated), delete, push, checkout.
+  *`repo_view/tag_ops.rs`: New Tag… (commit menu, palette, at the selection) takes a name
+  and an optional message (annotated when given) and can push it; the sidebar's tag menu
+  adds Push Tag and Delete… (optionally on the remote too); palette "Push All Tags";
+  checkout was already there (asks, detached). The dialog form gained a message field.*
 - [ ] M4-7 Stashes: create (with untracked, staged only, keep index), apply, pop, drop,
       view diff, create branch from stash.
 - [ ] M4-8 Remotes: add / edit / remove, fetch one, prune.

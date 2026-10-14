@@ -1,12 +1,12 @@
 //! One small dialog for branch and remote operations: a title, a description, an
-//! optional name field (checked like a branch name) and checkboxes.
+//! optional name field (checked like a branch name), an optional message and checkboxes.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::ButtonVariant;
-use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     App, AppContext as _, Context, Focusable as _, ParentElement as _,
@@ -31,12 +31,16 @@ pub(super) struct Form {
     pub placeholder: &'static str,
     /// Names the field must not take (existing branches).
     pub taken: Vec<String>,
+    /// A multi-line message field's placeholder (`None`: no field).
+    pub message: Option<&'static str>,
     pub checks: Vec<(&'static str, bool)>,
 }
 
 /// What a confirmed [`Form`] hands back.
 pub(super) struct Answer {
     pub name: String,
+    /// The message field's text, trimmed (empty without the field).
+    pub message: String,
     pub checks: Vec<bool>,
 }
 
@@ -55,6 +59,13 @@ impl RepoView {
                 let mut s = InputState::new(window, cx).placeholder(placeholder);
                 s.set_value(initial, window, cx);
                 s
+            })
+        });
+        let message = form.message.map(|placeholder| {
+            cx.new(|cx| {
+                TextareaState::new(window, cx)
+                    .auto_grow(3, 8)
+                    .placeholder(placeholder)
             })
         });
         let checks = Rc::new(RefCell::new(
@@ -101,6 +112,9 @@ impl RepoView {
                         }),
                 );
             }
+            if let Some(message) = &message {
+                alert = alert.child(Textarea::new(message).text_size(ts::BODY));
+            }
             for (i, (label, _)) in form.checks.iter().enumerate() {
                 let on = checks.borrow().get(i).copied().unwrap_or(false);
                 let checks = checks.clone();
@@ -115,8 +129,9 @@ impl RepoView {
                         }),
                 );
             }
-            let (input, checks, error, view, on_ok, form) = (
+            let (input, message, checks, error, view, on_ok, form) = (
                 input.clone(),
+                message.clone(),
                 checks.clone(),
                 error.clone(),
                 view.clone(),
@@ -142,6 +157,10 @@ impl RepoView {
                 }
                 let answer = Answer {
                     name,
+                    message: message
+                        .as_ref()
+                        .map(|m| m.read(cx).value().trim().to_owned())
+                        .unwrap_or_default(),
                     checks: checks.borrow().clone(),
                 };
                 let on_ok = on_ok.clone();
