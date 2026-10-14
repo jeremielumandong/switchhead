@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use crate::{Error, Oid, Repo, Result};
+use crate::{Error, Oid, Repo, Result, path_from_bytes};
 
 /// How one side of an entry (index or work tree) differs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -245,12 +245,6 @@ pub fn status(repo: &Repo, opts: StatusOptions) -> Result<Status> {
     parse(&out.stdout)
 }
 
-fn path_of(bytes: &[u8]) -> PathBuf {
-    gix::path::from_bstr(gix::bstr::BStr::new(bytes))
-        .map(std::borrow::Cow::into_owned)
-        .unwrap_or_else(|_| PathBuf::from(String::from_utf8_lossy(bytes).into_owned()))
-}
-
 /// Split off the first `n` space-separated fields; the rest (a path) may contain spaces.
 fn fields(line: &[u8], n: usize) -> Result<(Vec<&[u8]>, &[u8])> {
     let mut out = Vec::with_capacity(n);
@@ -320,7 +314,7 @@ pub fn parse(out: &[u8]) -> Result<Status> {
                 let (f, path) = fields(rec, 8)?;
                 let (x, y) = xy(f[1])?;
                 status.entries.push(Entry {
-                    path: path_of(path),
+                    path: path_from_bytes(path),
                     orig_path: None,
                     kind: EntryKind::Ordinary,
                     index: Change::from_char(x)?,
@@ -339,8 +333,8 @@ pub fn parse(out: &[u8]) -> Result<Status> {
                     .unwrap_or(0);
                 let orig = records.next().ok_or_else(|| Error::Parse(text()))?;
                 status.entries.push(Entry {
-                    path: path_of(path),
-                    orig_path: Some(path_of(orig)),
+                    path: path_from_bytes(path),
+                    orig_path: Some(path_from_bytes(orig)),
                     kind: EntryKind::Renamed { score },
                     index: Change::from_char(x)?,
                     worktree: Change::from_char(y)?,
@@ -352,7 +346,7 @@ pub fn parse(out: &[u8]) -> Result<Status> {
                 let (f, path) = fields(rec, 10)?;
                 let (x, y) = xy(f[1])?;
                 status.entries.push(Entry {
-                    path: path_of(path),
+                    path: path_from_bytes(path),
                     orig_path: None,
                     kind: EntryKind::Unmerged(Conflict::from_xy(x, y)?),
                     index: Change::Unmerged,
@@ -368,7 +362,7 @@ pub fn parse(out: &[u8]) -> Result<Status> {
                     (EntryKind::Ignored, Change::Unmodified)
                 };
                 status.entries.push(Entry {
-                    path: path_of(path),
+                    path: path_from_bytes(path),
                     orig_path: None,
                     kind,
                     index: Change::Unmodified,
