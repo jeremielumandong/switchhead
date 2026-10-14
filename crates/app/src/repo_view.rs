@@ -59,8 +59,10 @@ use sidebar::{Section, SideRow};
 const ROW_H: f32 = 24.0;
 /// Rows Page Up / Page Down move.
 const PAGE: isize = 20;
-/// How often `.git` is checked for outside changes.
+/// How often `.git` is checked for outside changes when file events are unavailable.
 const WATCH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+/// With file events, the check still runs every this many intervals (a missed event).
+const WATCH_EVERY_WITH_EVENTS: u32 = 10;
 /// The graph column never grows past this many lanes (wider rows are clipped).
 const MAX_LANES: u16 = 24;
 
@@ -172,8 +174,11 @@ pub struct RepoView {
     /// The `.git` fingerprint the view last matched (see [`RepoView::check_changes`]).
     watched: Option<Fingerprint>,
     checking: bool,
+    /// File events are arriving (see [`RepoView::watch_events`]); polling slows down.
+    events_live: bool,
     _walk: Option<Task<()>>,
     _watch: Task<()>,
+    _events: Task<()>,
     _details: [Subscription; 2],
     _changes: [Subscription; 2],
     _op: Option<Task<()>>,
@@ -204,6 +209,7 @@ impl RepoView {
                 }
             }),
         ];
+        let repo_for_events = repo.clone();
         let mut v = Self {
             state: repo.state(),
             repo,
@@ -246,7 +252,9 @@ impl RepoView {
             _changes: changes_sub,
             watched: None,
             checking: false,
+            events_live: false,
             _watch: Self::watch(cx),
+            _events: Self::watch_events(repo_for_events, cx),
             _walk: None,
             _details: [sub, open_file],
             _op: None,
@@ -255,12 +263,63 @@ impl RepoView {
         v
     }
 
-    /// Check `.git` for changes made outside the app every [`WATCH_INTERVAL`].
+    /// Check `.git` for changes made outside the app every [`WATCH_INTERVAL`], or less
+    /// often while file events arrive.
     fn watch(cx: &mut Context<Self>) -> Task<()> {
         cx.spawn(async move |this, cx| {
+            let mut tick = 0u32;
             loop {
                 cx.background_executor().timer(WATCH_INTERVAL).await;
-                if this.update(cx, |v, cx| v.check_changes(cx)).is_err() {
+                tick = tick.wrapping_add(1);
+                let res = this.update(cx, |v, cx| {
+                    if !v.events_live || tick.is_multiple_of(WATCH_EVERY_WITH_EVENTS) {
+                        v.check_changes(cx);
+                    }
+                });
+                if res.is_err() {
+                    break;
+                }
+            }
+        })
+    }
+
+    /// Watch the work tree and `.git` with native file events: a change in `.git` checks
+    /// refs and the index at once, an edit in the work tree re-reads status. Starting the
+    /// watch walks the tree, so it runs off the UI thread; when the OS refuses it (too many
+    /// folders for inotify), polling and window focus keep the view current.
+    fn watch_events(repo: Repo, cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn(async move |this, cx| {
+            let (tx, mut rx) = unbounded_channel::<watch::Changes>();
+            let name = repo.name().to_owned();
+            let started = cx
+                .background_executor()
+                .spawn(async move {
+                    watch::Watcher::start(&repo, move |c| {
+                        let _ = tx.send(c);
+                    })
+                })
+                .await;
+            // Dropped with this task, which stops the watch.
+            let _watcher = match started {
+                Ok(w) => w,
+                Err(e) => {
+                    tracing::warn!(repo = name, error = %e, "file events unavailable; polling");
+                    return;
+                }
+            };
+            if this.update(cx, |v, _| v.events_live = true).is_err() {
+                return;
+            }
+            while let Some(c) = rx.recv().await {
+                let res = this.update(cx, |v, cx| {
+                    if c.git {
+                        v.check_changes(cx);
+                    }
+                    if c.work_tree {
+                        v.changes.update(cx, |ch, cx| ch.refresh(cx));
+                    }
+                });
+                if res.is_err() {
                     break;
                 }
             }

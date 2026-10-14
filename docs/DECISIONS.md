@@ -113,3 +113,16 @@ stored as git keeps them (`--cleanup=strip`). The repository's `commit.template`
 box when it is empty, and an untouched template does not count as a message. Commit runs
 `git commit -F -` with the message on stdin, so hooks and signing are
 git's own. Spell check needs a crate outside the approved list and is a follow-up.
+
+## 2026-10-14 — notify for file events
+
+Jeremie approved `notify` (CC0-1.0 / MIT, already in the tree through gpui-component, so no
+new download). `git::watch::Watcher` watches the work tree and the git dir recursively with
+native events (inotify, FSEvents, ReadDirectoryChangesW). Events are debounced (150 ms, at
+most 1 s while they keep coming) and reported as "something in `.git`" (the app compares
+`watch::fingerprint` to tell refs from the index) and "something in the work tree" (status
+is re-read). Reads (access events), `.git/objects` and `*.lock` files are ignored. The
+`.git` poll stays as a safety net, every 10 s while events arrive and every second when the
+OS refuses the watch (on Linux, a tree with more folders than
+`fs.inotify.max_user_watches`). Ignored folders (`target/`, `node_modules/`) still send
+events, so a build re-reads status about once a second; filtering them is a follow-up.
