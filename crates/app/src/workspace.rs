@@ -49,6 +49,7 @@ pub struct Workspace {
     pub(crate) notice: Option<SharedString>,
     _save: Option<Task<()>>,
     _omarchy: Option<Task<()>>,
+    _diff_prefs: gpui_kit::Subscription,
 }
 
 impl Workspace {
@@ -87,6 +88,14 @@ impl Workspace {
                 }
             })
         });
+        // Diff settings are changed from any tab; save them here.
+        let diff_prefs = cx.observe_global::<crate::store::DiffPrefs>(|this, cx| {
+            let prefs = *cx.global::<crate::store::DiffPrefs>();
+            if this.state.diff != prefs {
+                this.state.diff = prefs;
+                this.save(cx);
+            }
+        });
         let reopen = state.open_tabs.clone();
         let mut ws = Self {
             manager: ManagerState::new(window, cx),
@@ -100,6 +109,7 @@ impl Workspace {
             notice: None,
             _save: None,
             _omarchy: omarchy,
+            _diff_prefs: diff_prefs,
         };
         for path in reopen {
             ws.open_path(path, false, cx);

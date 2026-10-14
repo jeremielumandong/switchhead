@@ -11,6 +11,7 @@
 
 pub mod blame;
 pub mod cli;
+pub mod commit;
 pub mod conflict;
 pub mod diff;
 pub mod discover;

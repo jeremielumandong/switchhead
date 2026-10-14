@@ -93,9 +93,14 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
       *`repo_view.rs` + `graph_paint.rs`; the walk runs on its own thread and batches reach
       the UI over a channel. All / Current switch, double-click a ref to show only it, refs
       sidebar (virtualized). Shallow clones now walk (boundary commits become roots).*
-- [ ] M2-5 Commit details: header (author, committer, date, parents, refs, full message),
+- [x] M2-5 Commit details: header (author, committer, date, parents, refs, full message),
       changed files (list and tree), file diff (inline and side-by-side, word highlights,
       ignore whitespace, context lines, syntax highlighting via gpui-component).
+      *`commit_view.rs` under the graph (resizable): header (parents jump to the commit),
+      file list or folder tree (`file_list.rs`), diff with both layouts (`diff_model.rs`
+      rows, tree-sitter colors cut per line off the UI thread). Diff settings are shared by
+      all tabs and saved. `commit::info` in the engine. Merges show the first-parent diff;
+      image previews wait for M3-5.*
 - [ ] M2-6 Command palette (Quick Launch) with every command; keyboard shortcuts like Fork's.
 - [ ] M2-7 File system watcher: refresh status and refs when the work tree or `.git` changes.
 
@@ -188,3 +193,9 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - Recent repositories whose folder is gone still show; mark them and offer to remove.
 - Rebase message files stay in `.git/switchhead/` after a stopped rebase that the user
   then aborts; sweep old `rebase-*` dirs when a repo opens.
+- Side-by-side diff clips long lines (the inline layout scrolls sideways); give each side
+  its own horizontal scroll.
+- Word highlights mark changed indentation even with "Ignore all whitespace"; skip
+  whitespace-only word ranges when whitespace is ignored.
+- Merge commits: offer a diff against each parent (and the combined diff), not only the
+  first parent.

@@ -8,6 +8,9 @@ extern crate gpui_kit as gpui;
 mod actions;
 mod appearance;
 mod assets;
+mod commit_view;
+mod diff_model;
+mod file_list;
 mod graph_paint;
 mod log_file;
 mod manager;
@@ -106,6 +109,7 @@ fn main() -> Result<()> {
                 look.zoom = z;
             }
             appearance::set(look, cx);
+            cx.set_global(state.diff);
             let theme_key = std::env::var("SWITCHHEAD_THEME")
                 .ok()
                 .or_else(|| state.theme.clone());
