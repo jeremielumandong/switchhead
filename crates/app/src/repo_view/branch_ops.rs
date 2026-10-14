@@ -15,7 +15,7 @@ use super::form::Form;
 use super::sidebar::{SideRow, Target};
 
 impl RepoView {
-    fn branch_names(&self) -> Vec<String> {
+    pub(super) fn branch_names(&self) -> Vec<String> {
         self.refs.branches.iter().map(|b| b.name.clone()).collect()
     }
 
@@ -33,7 +33,10 @@ impl RepoView {
             ok: "Create Branch",
             danger: false,
             name: Some(String::new()),
+            placeholder: "Branch name",
             taken: self.branch_names(),
+            message: None,
+            url: None,
             checks: vec![("Check out the new branch", true)],
         };
         self.open_form(
@@ -81,7 +84,10 @@ impl RepoView {
             ok: "Rename",
             danger: false,
             name: Some(old.clone()),
+            placeholder: "Branch name",
             taken,
+            message: None,
+            url: None,
             checks: Vec::new(),
         };
         self.open_form(
@@ -126,7 +132,10 @@ impl RepoView {
             ok: "Delete",
             danger: true,
             name: None,
+            placeholder: "Branch name",
             taken: Vec::new(),
+            message: None,
+            url: None,
             checks,
         };
         self.open_form(
@@ -174,7 +183,10 @@ impl RepoView {
             ok: "Delete",
             danger: true,
             name: None,
+            placeholder: "Branch name",
             taken: Vec::new(),
+            message: None,
+            url: None,
             checks: Vec::new(),
         };
         self.open_form(
@@ -251,7 +263,7 @@ impl RepoView {
     }
 
     /// `origin` when there is one, else the first remote.
-    fn default_remote(&self) -> Option<String> {
+    pub(super) fn default_remote(&self) -> Option<String> {
         let names = self.refs.remote_names();
         names
             .iter()
@@ -272,7 +284,7 @@ impl RepoView {
 }
 
 /// A menu item's action on the view.
-type ViewAction = dyn Fn(&mut RepoView, &mut Window, &mut Context<RepoView>);
+pub(super) type ViewAction = dyn Fn(&mut RepoView, &mut Window, &mut Context<RepoView>);
 
 /// `origin/feature/x` → (`origin`, `feature/x`).
 fn split_remote(short: &str) -> Option<(String, String)> {
@@ -307,8 +319,12 @@ pub(super) fn build_ref_menu(
             remotes,
         )
     };
-    let Some(SideRow::Ref { target, rev, .. }) = row else {
-        return menu;
+    let (target, rev, id) = match row {
+        Some(SideRow::Ref {
+            target, rev, id, ..
+        }) => (target, rev, id),
+        Some(row) => return super::section_menu::build_section_menu(menu, row, view, cx),
+        None => return menu,
     };
     let act = |f: Box<ViewAction>| {
         let view = view.clone();
@@ -316,6 +332,9 @@ pub(super) fn build_ref_menu(
             let _ = view.update(cx, |v, cx| f(v, window, cx));
         }
     };
+    if let (Target::Stash(index), Some(id)) = (&target, id) {
+        return super::stash_ops::build_stash_menu(menu, *index, id, &act, view, cx);
+    }
     let (name, rev_for_ops) = match &target {
         Target::Branch(n) => (n.clone(), n.clone()),
         Target::Remote(s) => (s.clone(), s.clone()),
@@ -425,6 +444,19 @@ pub(super) fn build_ref_menu(
                         }))
                 });
             }
+        }
+        Target::Tag(t) => {
+            if has_remote {
+                let t1 = t.clone();
+                menu = menu.item(
+                    PopupMenuItem::new("Push Tag")
+                        .on_click(act(Box::new(move |v, _, cx| v.push_tag(t1.clone(), cx)))),
+                );
+            }
+            let t2 = t.clone();
+            menu = menu.item(PopupMenuItem::new("Delete…").on_click(act(Box::new(
+                move |v, window, cx| v.delete_tag_dialog(t2.clone(), window, cx),
+            ))));
         }
         Target::Remote(short) => {
             let s = short.clone();

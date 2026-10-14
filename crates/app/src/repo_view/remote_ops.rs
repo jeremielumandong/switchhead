@@ -41,7 +41,10 @@ impl RepoView {
             ok: "Fetch",
             danger: false,
             name: None,
+            placeholder: "Branch name",
             taken: Vec::new(),
+            message: None,
+            url: None,
             checks,
         };
         self.open_form(
@@ -83,7 +86,10 @@ impl RepoView {
             ok: "Pull",
             danger: false,
             name: None,
+            placeholder: "Branch name",
             taken: Vec::new(),
+            message: None,
+            url: None,
             checks: vec![
                 ("Rebase local commits instead of merging", false),
                 ("Stash and reapply local changes", true),
@@ -119,7 +125,10 @@ impl RepoView {
                     ok: "OK",
                     danger: false,
                     name: None,
+                    placeholder: "Branch name",
                     taken: Vec::new(),
+                    message: None,
+                    url: None,
                     checks: Vec::new(),
                 },
                 |_, _, _| {},
@@ -148,7 +157,10 @@ impl RepoView {
                     ok: "OK",
                     danger: false,
                     name: None,
+                    placeholder: "Branch name",
                     taken: Vec::new(),
+                    message: None,
+                    url: None,
                     checks: Vec::new(),
                 },
                 |_, _, _| {},
@@ -164,7 +176,10 @@ impl RepoView {
             ok: "Push",
             danger: false,
             name: None,
+            placeholder: "Branch name",
             taken: Vec::new(),
+            message: None,
+            url: None,
             checks: vec![
                 ("Track it as the upstream", !has_upstream),
                 ("Push all tags", false),
@@ -189,6 +204,167 @@ impl RepoView {
                 );
             },
             window,
+            cx,
+        );
+    }
+}
+
+impl RepoView {
+    /// Ask for a name and URL, add the remote and (optionally) fetch it.
+    pub fn add_remote_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let names: Vec<String> = self
+            .refs
+            .remote_names()
+            .iter()
+            .map(|n| (*n).to_owned())
+            .collect();
+        let form = Form {
+            title: "Add Remote".into(),
+            description: "Another repository to fetch from and push to.".into(),
+            ok: "Add Remote",
+            danger: false,
+            name: Some(if names.is_empty() {
+                "origin".into()
+            } else {
+                String::new()
+            }),
+            placeholder: "Name, e.g. upstream",
+            taken: names,
+            message: None,
+            url: Some(String::new()),
+            checks: vec![("Fetch it now", true)],
+        };
+        self.open_form(
+            form,
+            |v, a, cx| {
+                let fetch = a.checks[0];
+                v.run_op(
+                    "Adding remote",
+                    "Remote added",
+                    move |r, cancel, on_line| {
+                        r.add_remote(&a.name, &a.url)?;
+                        if fetch {
+                            r.fetch(Some(&a.name), false, cancel, |l| on_line(l))?;
+                        }
+                        Ok(())
+                    },
+                    cx,
+                );
+            },
+            window,
+            cx,
+        );
+    }
+
+    /// Rename a remote or change its URL.
+    pub(super) fn edit_remote_dialog(
+        &mut self,
+        name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let old_url = self.refs.remote_url(&name).unwrap_or_default().to_owned();
+        let form = Form {
+            title: format!("Edit {name}"),
+            description: "Renaming moves its remote branches and the upstream settings that \
+                          point at them."
+                .into(),
+            ok: "Save",
+            danger: false,
+            name: Some(name.clone()),
+            placeholder: "Name",
+            taken: self
+                .refs
+                .remote_names()
+                .iter()
+                .filter(|n| **n != name)
+                .map(|n| (*n).to_owned())
+                .collect(),
+            message: None,
+            url: Some(old_url.clone()),
+            checks: Vec::new(),
+        };
+        self.open_form(
+            form,
+            move |v, a, cx| {
+                let (old, old_url) = (name.clone(), old_url.clone());
+                if a.name == old && a.url == old_url {
+                    return;
+                }
+                v.run_op(
+                    "Editing remote",
+                    "Remote saved",
+                    move |r, _, _| {
+                        if a.url != old_url {
+                            r.set_remote_url(&old, &a.url)?;
+                        }
+                        if a.name != old {
+                            r.rename_remote(&old, &a.name)?;
+                        }
+                        Ok(())
+                    },
+                    cx,
+                );
+            },
+            window,
+            cx,
+        );
+    }
+
+    /// Ask, then remove a remote (and its remote-tracking branches).
+    pub(super) fn remove_remote_dialog(
+        &mut self,
+        name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let form = Form {
+            title: format!("Remove {name}?"),
+            description: format!(
+                "Its remote branches disappear from this repository, and branches tracking \
+                 them lose their upstream. Nothing changes on {name} itself."
+            ),
+            ok: "Remove",
+            danger: true,
+            name: None,
+            placeholder: "",
+            taken: Vec::new(),
+            message: None,
+            url: None,
+            checks: Vec::new(),
+        };
+        self.open_form(
+            form,
+            move |v, _, cx| {
+                let name = name.clone();
+                v.run_op(
+                    "Removing remote",
+                    "Remote removed",
+                    move |r, _, _| r.remove_remote(&name),
+                    cx,
+                );
+            },
+            window,
+            cx,
+        );
+    }
+
+    /// Fetch one remote, pruning branches deleted there.
+    pub(super) fn fetch_remote(&mut self, name: String, cx: &mut Context<Self>) {
+        self.run_op(
+            "Fetching",
+            "Fetched",
+            move |r, cancel, on_line| r.fetch(Some(&name), true, cancel, |l| on_line(l)),
+            cx,
+        );
+    }
+
+    /// Drop remote-tracking branches whose branch is gone on the remote.
+    pub(super) fn prune_remote(&mut self, name: String, cx: &mut Context<Self>) {
+        self.run_op(
+            "Pruning",
+            "Pruned",
+            move |r, _, _| r.prune_remote(&name),
             cx,
         );
     }

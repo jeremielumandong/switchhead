@@ -23,6 +23,8 @@ mod manager;
 mod merge_view;
 mod omarchy;
 mod palette;
+mod rebase_editor;
+mod rebase_model;
 mod repo_view;
 mod sidebar_model;
 mod split;

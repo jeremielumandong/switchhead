@@ -127,9 +127,9 @@ pub struct Refs {
     pub worktrees: Vec<crate::worktrees::Worktree>,
     /// Submodules; filled by [`load_tracking`].
     pub submodules: Vec<crate::worktrees::Submodule>,
-    /// Remotes in the config (`git remote`), including ones never fetched; filled by
-    /// [`load_tracking`].
-    pub configured_remotes: Vec<String>,
+    /// Remotes in the config (`git remote -v`) with their fetch URLs, including ones never
+    /// fetched; filled by [`load_tracking`].
+    pub configured_remotes: Vec<(String, String)>,
 }
 
 impl Refs {
@@ -139,11 +139,19 @@ impl Refs {
             .remotes
             .iter()
             .map(|r| r.remote.as_str())
-            .chain(self.configured_remotes.iter().map(String::as_str))
+            .chain(self.configured_remotes.iter().map(|(n, _)| n.as_str()))
             .collect();
         names.sort_unstable();
         names.dedup();
         names
+    }
+
+    /// A remote's fetch URL.
+    pub fn remote_url(&self, name: &str) -> Option<&str> {
+        self.configured_remotes
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, u)| u.as_str())
     }
 
     /// The branch HEAD is on.
@@ -283,8 +291,8 @@ pub fn load_tracking(repo: &Repo, refs: &mut Refs) -> Result<()> {
         tracing::debug!(error = %e, "worktrees unavailable");
         Vec::new()
     });
-    refs.configured_remotes = match repo.git()?.text(&["remote"]) {
-        Ok(text) => text.lines().map(str::to_owned).collect(),
+    refs.configured_remotes = match repo.git()?.text(&["remote", "-v"]) {
+        Ok(text) => parse_remotes(&text),
         Err(e) => {
             tracing::debug!(error = %e, "remotes unavailable");
             Vec::new()
@@ -305,6 +313,17 @@ pub fn load_tracking(repo: &Repo, refs: &mut Refs) -> Result<()> {
         b.tracking = tracking.get(b.name.as_str()).cloned();
     }
     Ok(())
+}
+
+/// Parse `git remote -v` (`name<TAB>url (fetch)`), keeping each remote's fetch URL.
+fn parse_remotes(text: &str) -> Vec<(String, String)> {
+    text.lines()
+        .filter_map(|l| {
+            let (name, rest) = l.split_once('\t')?;
+            let url = rest.strip_suffix(" (fetch)")?;
+            Some((name.to_owned(), url.to_owned()))
+        })
+        .collect()
 }
 
 /// Parse `name\0upstream\0track` lines. Branches without an upstream are left out.
@@ -403,6 +422,7 @@ mod tests {
         t.git(&["remote", "add", "unfetched", "../nowhere"]);
         load_tracking(&repo, &mut refs).unwrap();
         assert_eq!(refs.remote_names(), ["origin", "unfetched"]);
+        assert_eq!(refs.remote_url("unfetched"), Some("../nowhere"));
         let main = refs.current_branch().unwrap();
         assert_eq!(
             main.tracking,

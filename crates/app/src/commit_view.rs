@@ -444,6 +444,7 @@ impl CommitView {
                     .child(SharedString::from(match (n, merge) {
                         (1, false) => "1 file changed".to_owned(),
                         (n, false) => format!("{n} files changed"),
+                        (1, true) => "1 file changed (first parent)".to_owned(),
                         (n, true) => format!("{n} files changed (first parent)"),
                     })),
             )

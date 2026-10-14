@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use gpui_kit::AppContext as _;
+use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::resizable::{ResizableState, resizable_panel, v_resizable};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -40,9 +41,15 @@ use crate::ui;
 
 mod activity_panel;
 mod branch_ops;
+mod commit_menu;
 mod form;
+mod rebase;
 mod remote_ops;
+mod search;
+mod section_menu;
 mod sidebar;
+mod stash_ops;
+mod tag_ops;
 
 use sidebar::{Section, SideRow};
 
@@ -143,6 +150,10 @@ pub struct RepoView {
     pub activity_open: bool,
     /// Activity entries the user folded.
     activity_collapsed: HashSet<u64>,
+    /// The commit search bar above the graph.
+    search: Option<search::Search>,
+    /// The interactive rebase editor, shown in place of the graph.
+    rebase: Option<(Entity<crate::rebase_editor::RebaseEditor>, Subscription)>,
     details: Entity<CommitView>,
     details_split: Entity<ResizableState>,
     /// The commit the details pane shows.
@@ -208,6 +219,8 @@ impl RepoView {
             activity: Activity::default(),
             activity_open: false,
             activity_collapsed: HashSet::new(),
+            rebase: None,
+            search: None,
             details,
             details_split: cx.new(|_| ResizableState::default()),
             shown: None,
@@ -517,6 +530,7 @@ impl RepoView {
         if self.scope != scope {
             self.scope = scope;
             self.reload(cx);
+            self.run_search(false, cx);
             cx.notify();
         }
     }
@@ -735,6 +749,7 @@ impl RepoView {
         let merge = self.log.parents(i).len() > 1;
         let colors = graph_paint::colors(p);
         let selected = self.selected == Some(i);
+        let dim = self.search.as_ref().is_some_and(|s| s.dims(&id));
         let graph = canvas(
             |_, _, _| {},
             move |bounds, _, window, _| {
@@ -772,12 +787,21 @@ impl RepoView {
             .text_size(ts::BODY)
             .when(selected, |d| d.bg(p.sel))
             .when(!selected, |d| d.hover(|s| s.bg(p.hover)))
+            .when(dim, |d| d.opacity(0.35))
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.selected = Some(i);
                 window.focus(&this.focus, cx);
                 this.sync_details(false, cx);
                 cx.notify();
             }))
+            .capture_any_mouse_down(cx.listener(
+                move |this, ev: &gpui_kit::MouseDownEvent, window, cx| {
+                    if ev.button == gpui_kit::MouseButton::Right {
+                        window.focus(&this.focus, cx);
+                        this.select_for_menu(i, cx);
+                    }
+                },
+            ))
             .child(graph)
             .child(
                 div()
@@ -850,7 +874,7 @@ impl RepoView {
                 .child(msg)
                 .into_any_element()
         } else {
-            uniform_list(
+            let list = uniform_list(
                 "graph",
                 count,
                 cx.processor(move |this, range: Range<usize>, _w, cx| {
@@ -862,15 +886,24 @@ impl RepoView {
                 }),
             )
             .track_scroll(&self.scroll)
-            .flex_1()
-            .min_h_0()
-            .into_any_element()
+            .size_full();
+            let view = cx.entity().downgrade();
+            div()
+                .id("graph-menu")
+                .flex_1()
+                .min_h_0()
+                .child(list)
+                .context_menu(move |menu, window, cx| {
+                    commit_menu::build_commit_menu(menu, &view, window, cx)
+                })
+                .into_any_element()
         };
         div()
             .size_full()
             .flex()
             .flex_col()
             .bg(p.surface)
+            .children(self.render_search(p, cx))
             .child(self.render_graph_header(p, graph_w, cx))
             .when(self.loading && count > 0, |d| {
                 d.child(ui::loading_bar("graph-loading", p))
@@ -973,6 +1006,16 @@ impl Render for RepoView {
             .on_action(cx.listener(|this, _: &actions::NewBranch, window, cx| {
                 this.new_branch_at_selection(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &actions::NewTag, window, cx| {
+                this.new_tag_at_selection(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::PushAllTags, _, cx| this.push_all_tags(cx)))
+            .on_action(cx.listener(|this, _: &actions::AddRemote, window, cx| {
+                this.add_remote_dialog(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::FindCommits, window, cx| {
+                this.open_search(window, cx)
+            }))
             .on_action(cx.listener(|this, _: &actions::StageAll, _, cx| {
                 this.changes.update(cx, |c, cx| c.stage_all(cx))
             }))
@@ -1016,7 +1059,11 @@ impl RepoView {
                         .child(self.changes.clone()),
                 )
             })
-            .when(self.mode == Mode::Commits, |d| {
+            .when_some(
+                self.rebase.as_ref().filter(|_| self.mode == Mode::Commits),
+                |d, (editor, _)| d.child(div().flex_1().min_w_0().h_full().child(editor.clone())),
+            )
+            .when(self.mode == Mode::Commits && self.rebase.is_none(), |d| {
                 d.child(
                     div().flex_1().min_w_0().h_full().child(
                         v_resizable("graph-details")

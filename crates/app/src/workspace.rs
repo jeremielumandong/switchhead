@@ -373,12 +373,7 @@ impl Workspace {
             ToolbarOp::Fetch => v.fetch_dialog(window, cx),
             ToolbarOp::Pull => v.pull_dialog(window, cx),
             ToolbarOp::Push => v.push_dialog(window, cx),
-            ToolbarOp::Stash => v.run_op(
-                "Stashing",
-                "Stashed local changes",
-                |r, _, _| r.stash_push(&Default::default()),
-                cx,
-            ),
+            ToolbarOp::Stash => v.stash_dialog(window, cx),
             ToolbarOp::Pop => v.run_op(
                 "Popping the stash",
                 "Applied and dropped stash@{0}",
@@ -667,6 +662,7 @@ impl Workspace {
 
     fn render_rail(&self, p: &Palette, cx: &mut Context<Self>) -> AnyElement {
         let repo_sidebar = self.active_repo().map(|v| v.read(cx).sidebar);
+        let repo_search = self.active_repo().map(|v| v.read(cx).search_open());
         let item = |id: &'static str,
                     icon: &'static str,
                     tip: &'static str,
@@ -686,7 +682,9 @@ impl Workspace {
                 .when(enabled, |d| d.cursor_pointer().hover(|s| s.bg(p.hover)))
                 .tooltip(move |w, cx| Tooltip::new(tip).build(w, cx))
                 .when(enabled, |d| {
-                    d.on_click(cx.listener(move |this, _, _, cx| this.rail_click(rail, cx)))
+                    d.on_click(
+                        cx.listener(move |this, _, window, cx| this.rail_click(rail, window, cx)),
+                    )
                 })
                 .child(
                     div()
@@ -738,9 +736,9 @@ impl Workspace {
             .child(item(
                 "rail-search",
                 "icons/search.svg",
-                "Search commits (coming soon)",
-                false,
-                false,
+                "Search commits",
+                repo_search == Some(true),
+                repo_search.is_some(),
                 RailItem::Search,
                 cx,
             ))
@@ -766,7 +764,7 @@ impl Workspace {
             .into_any_element()
     }
 
-    fn rail_click(&mut self, item: RailItem, cx: &mut Context<Self>) {
+    fn rail_click(&mut self, item: RailItem, window: &mut Window, cx: &mut Context<Self>) {
         match item {
             RailItem::Repos => self.activate(0, cx),
             RailItem::Branches => {
@@ -781,7 +779,18 @@ impl Workspace {
                 self.settings_open = !self.settings_open;
                 cx.notify();
             }
-            RailItem::Search | RailItem::Assistant => {}
+            RailItem::Search => {
+                if let Some(v) = self.active_repo().cloned() {
+                    v.update(cx, |v, cx| {
+                        if v.search_open() {
+                            v.close_search(window, cx)
+                        } else {
+                            v.open_search(window, cx)
+                        }
+                    });
+                }
+            }
+            RailItem::Assistant => {}
         }
     }
 
@@ -1143,8 +1152,8 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &actions::PopStash, window, cx| {
                 this.repo_op(ToolbarOp::Pop, window, cx)
             }))
-            .on_action(cx.listener(|this, _: &actions::ToggleSidebar, _, cx| {
-                this.rail_click(RailItem::Branches, cx)
+            .on_action(cx.listener(|this, _: &actions::ToggleSidebar, window, cx| {
+                this.rail_click(RailItem::Branches, window, cx)
             }))
             .on_action(cx.listener(|this, _: &actions::ZoomIn, w, cx| {
                 this.set_zoom(appearance::zoom_in(appearance::zoom(cx)), w, cx)

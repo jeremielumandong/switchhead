@@ -58,12 +58,17 @@ pub struct TodoItem {
 }
 
 /// The commits after `base` up to HEAD (`None`: from the root), oldest first, all `pick`.
-/// Merge commits are left out, as `git rebase -i` does.
+/// Merge commits are left out, as `git rebase -i` does. `base` must be in HEAD's history.
 pub fn plan(repo: &Repo, base: Option<Oid>) -> Result<Vec<TodoItem>> {
-    let range = match base {
-        Some(b) => format!("{b}..HEAD"),
-        None => "HEAD".to_owned(),
-    };
+    if let Some(b) = base
+        && !is_ancestor(repo, b)?
+    {
+        return Err(Error::Unsupported(format!(
+            "{} is not in the current branch's history",
+            crate::short(&b)
+        )));
+    }
+    let range = range(base);
     let out = repo.git()?.text(&[
         "log",
         "--reverse",
@@ -85,6 +90,32 @@ pub fn plan(repo: &Repo, base: Option<Oid>) -> Result<Vec<TodoItem>> {
             })
         })
         .collect()
+}
+
+fn range(base: Option<Oid>) -> String {
+    match base {
+        Some(b) => format!("{b}..HEAD"),
+        None => "HEAD".to_owned(),
+    }
+}
+
+/// `base` is HEAD or one of its ancestors.
+fn is_ancestor(repo: &Repo, base: Oid) -> Result<bool> {
+    let out = repo
+        .git()?
+        .text(&["rev-list", "--count", &format!("HEAD..{base}")])?;
+    Ok(out.trim() == "0")
+}
+
+/// How many merge commits sit after `base` (`None`: in all of HEAD's history). A rebase
+/// without `--rebase-merges` flattens them away, which the editor warns about.
+pub fn merges_after(repo: &Repo, base: Option<Oid>) -> Result<usize> {
+    let out = repo
+        .git()?
+        .text(&["rev-list", "--merges", "--count", &range(base)])?;
+    out.trim()
+        .parse()
+        .map_err(|_| Error::Parse(format!("rev-list --count: {out}")))
 }
 
 /// How a rebase run ended.
@@ -131,6 +162,18 @@ fn validate(items: &[TodoItem]) -> Result<()> {
 /// The todo file text; message files are written into `dir`.
 fn todo_text(items: &[TodoItem], dir: &Path) -> Result<String> {
     let mut out = String::new();
+    let amend = |out: &mut String, n: usize, msg: &str| -> Result<()> {
+        let file = dir.join(format!("msg-{n}.txt"));
+        std::fs::write(&file, msg)?;
+        out.push_str(&format!(
+            "exec git commit --amend --allow-empty --cleanup=strip -q -F {}\n",
+            sh_quote(&file)
+        ));
+        Ok(())
+    };
+    // A squash message is the combined commit's: it waits for the group's last
+    // squash/fixup (the newest squash's message wins).
+    let mut group_msg: Option<&str> = None;
     for (n, item) in items.iter().enumerate() {
         out.push_str(&format!(
             "{} {} {}\n",
@@ -138,31 +181,32 @@ fn todo_text(items: &[TodoItem], dir: &Path) -> Result<String> {
             item.id,
             item.summary
         ));
-        let amend = match item.action {
-            Action::Reword | Action::Squash => item.message.as_deref(),
-            _ => None,
-        };
-        // A squash message belongs after the last squash/fixup of its group.
+        match (item.action, item.message.as_deref()) {
+            (Action::Drop, _) => continue,
+            (Action::Reword, Some(msg)) => amend(&mut out, n, msg)?,
+            (Action::Squash, Some(msg)) => group_msg = Some(msg),
+            _ => {}
+        }
         let group_continues = items[n + 1..]
             .iter()
             .find(|i| i.action != Action::Drop)
             .is_some_and(|i| matches!(i.action, Action::Squash | Action::Fixup));
-        if let Some(msg) = amend
-            && !(item.action == Action::Squash && group_continues)
-        {
-            let file = dir.join(format!("msg-{n}.txt"));
-            std::fs::write(&file, msg)?;
-            out.push_str(&format!(
-                "exec git commit --amend --allow-empty --cleanup=strip -q -F {}\n",
-                sh_quote(&file)
-            ));
+        if !group_continues && let Some(msg) = group_msg.take() {
+            amend(&mut out, n, msg)?;
         }
     }
     Ok(out)
 }
 
-/// Run `git rebase -i` onto `base` (`None`: `--root`) with this plan.
-pub fn run(repo: &Repo, base: Option<Oid>, items: &[TodoItem]) -> Result<RebaseOutcome> {
+/// Run `git rebase -i` onto `base` (`None`: `--root`) with this plan. With `autostash`,
+/// local changes are stashed first and reapplied at the end (git refuses to start with
+/// them otherwise).
+pub fn run(
+    repo: &Repo,
+    base: Option<Oid>,
+    items: &[TodoItem],
+    autostash: bool,
+) -> Result<RebaseOutcome> {
     validate(items)?;
     let dir = tempfile_dir(repo)?;
     let todo = dir.join("todo");
@@ -174,7 +218,17 @@ pub fn run(repo: &Repo, base: Option<Oid>, items: &[TodoItem]) -> Result<RebaseO
         None => "--root".to_owned(),
     };
     let res = repo.git()?.run_with(
-        &["rebase", "-i", "--no-autosquash", &base_arg],
+        &[
+            "rebase",
+            "-i",
+            "--no-autosquash",
+            if autostash {
+                "--autostash"
+            } else {
+                "--no-autostash"
+            },
+            &base_arg,
+        ],
         None,
         &[("GIT_SEQUENCE_EDITOR", std::ffi::OsStr::new(&editor))],
     );
@@ -202,6 +256,16 @@ pub fn run(repo: &Repo, base: Option<Oid>, items: &[TodoItem]) -> Result<RebaseO
 /// A scratch directory inside the git dir for todo and message files.
 fn tempfile_dir(repo: &Repo) -> Result<std::path::PathBuf> {
     let base = repo.git_dir().join("switchhead");
+    // Files of a rebase that stopped and was then aborted or finished elsewhere.
+    if repo.state() == RepoState::Clean
+        && let Ok(old) = std::fs::read_dir(&base)
+    {
+        for e in old.flatten() {
+            if e.file_name().to_string_lossy().starts_with("rebase-") {
+                let _ = std::fs::remove_dir_all(e.path());
+            }
+        }
+    }
     std::fs::create_dir_all(&base)?;
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -242,6 +306,34 @@ mod tests {
         let s: Vec<&str> = p.iter().map(|i| i.summary.as_str()).collect();
         assert_eq!(s, ["add a", "add b", "add c"]);
         assert_eq!(plan(&repo, None).unwrap().len(), 4);
+        assert_eq!(merges_after(&repo, Some(base)).unwrap(), 0);
+    }
+
+    #[test]
+    fn refuses_a_base_off_the_branch() {
+        let (t, repo, base) = setup();
+        t.git(&["checkout", "-q", "-b", "side", &base.to_string()]);
+        t.commit_file("s.txt", "s\n", "side");
+        let side = Oid::from_hex(t.git(&["rev-parse", "HEAD"]).trim().as_bytes()).unwrap();
+        t.git(&["checkout", "-q", "-"]);
+        assert!(matches!(
+            plan(&repo, Some(side)),
+            Err(Error::Unsupported(_))
+        ));
+    }
+
+    #[test]
+    fn autostashes_local_changes() {
+        let (t, repo, base) = setup();
+        std::fs::write(t.join("a.txt"), "local\n").unwrap();
+        let mut p = plan(&repo, Some(base)).unwrap();
+        p[2].action = Action::Drop;
+        assert_eq!(
+            run(&repo, Some(base), &p, true).unwrap(),
+            RebaseOutcome::Done
+        );
+        assert_eq!(subjects(&t), ["add b", "add a", "base"]);
+        assert_eq!(std::fs::read_to_string(t.join("a.txt")).unwrap(), "local\n");
     }
 
     #[test]
@@ -263,7 +355,10 @@ mod tests {
                 ..b
             },
         ];
-        assert_eq!(run(&repo, Some(base), &p).unwrap(), RebaseOutcome::Done);
+        assert_eq!(
+            run(&repo, Some(base), &p, false).unwrap(),
+            RebaseOutcome::Done
+        );
         assert_eq!(subjects(&t), ["a and b", "C, reworded", "base"]);
         assert_eq!(
             t.git(&["log", "-1", "--skip=1", "--format=%B"]).trim(),
@@ -279,9 +374,26 @@ mod tests {
         p[0].action = Action::Drop;
         let mut p2 = p.clone();
         p2[1].action = Action::Pick;
-        assert_eq!(run(&repo, Some(base), &p2).unwrap(), RebaseOutcome::Done);
+        assert_eq!(
+            run(&repo, Some(base), &p2, false).unwrap(),
+            RebaseOutcome::Done
+        );
         assert_eq!(subjects(&t), ["a and b", "base"]);
         assert!(!t.join("c.txt").exists());
+    }
+
+    #[test]
+    fn keeps_a_squash_message_through_a_later_fixup() {
+        let (t, repo, base) = setup();
+        let mut p = plan(&repo, Some(base)).unwrap();
+        p[1].action = Action::Squash;
+        p[1].message = Some("a, b and c".into());
+        p[2].action = Action::Fixup;
+        assert_eq!(
+            run(&repo, Some(base), &p, false).unwrap(),
+            RebaseOutcome::Done
+        );
+        assert_eq!(subjects(&t), ["a, b and c", "base"]);
     }
 
     #[test]
@@ -290,7 +402,7 @@ mod tests {
         let mut p = plan(&repo, Some(base)).unwrap();
         p[1].action = Action::Edit;
         assert!(matches!(
-            run(&repo, Some(base), &p).unwrap(),
+            run(&repo, Some(base), &p, false).unwrap(),
             RebaseOutcome::Stopped { .. }
         ));
         assert_eq!(repo.state(), RepoState::RebaseInteractive);
@@ -303,11 +415,23 @@ mod tests {
         let n = p.len();
         p.swap(n - 1, n - 2);
         assert!(matches!(
-            run(&repo, Some(base), &p).unwrap(),
+            run(&repo, Some(base), &p, false).unwrap(),
             RebaseOutcome::Stopped { .. }
         ));
         t.git(&["rebase", "--abort"]);
         assert_eq!(repo.state(), RepoState::Clean);
+        // The next run clears what the stopped ones left.
+        let p = plan(&repo, Some(base)).unwrap();
+        let mut p2 = p.clone();
+        p2[p.len() - 1].action = Action::Drop;
+        assert_eq!(
+            run(&repo, Some(base), &p2, false).unwrap(),
+            RebaseOutcome::Done
+        );
+        let left = std::fs::read_dir(repo.git_dir().join("switchhead"))
+            .unwrap()
+            .count();
+        assert_eq!(left, 0);
     }
 
     #[test]
@@ -316,13 +440,13 @@ mod tests {
         let mut p = plan(&repo, Some(base)).unwrap();
         p[0].action = Action::Fixup;
         assert!(matches!(
-            run(&repo, Some(base), &p),
+            run(&repo, Some(base), &p, false),
             Err(Error::Unsupported(_))
         ));
         let mut p = plan(&repo, Some(base)).unwrap();
         p[1].action = Action::Reword;
         assert!(matches!(
-            run(&repo, Some(base), &p),
+            run(&repo, Some(base), &p, false),
             Err(Error::Unsupported(_))
         ));
         assert_eq!(repo.state(), RepoState::Clean);

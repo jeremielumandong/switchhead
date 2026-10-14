@@ -1074,6 +1074,33 @@ mod tests {
         );
         r2.set_upstream("topic", None).unwrap();
 
+        // Tags: push one, then delete it on the remote.
+        r.create_tag("v1", "HEAD", Some("one")).unwrap();
+        let remote_tags = || {
+            std::process::Command::new("git")
+                .args(["tag", "-l"])
+                .current_dir(&bare_path)
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+                .unwrap()
+        };
+        let (cancel, sink) = quiet();
+        r.push(
+            &PushOptions {
+                remote: "origin".into(),
+                refspec: "refs/tags/v1".into(),
+                ..Default::default()
+            },
+            &cancel,
+            sink,
+        )
+        .unwrap();
+        assert_eq!(remote_tags(), "v1");
+        let (cancel, sink) = quiet();
+        r.delete_remote_ref("origin", "refs/tags/v1", &cancel, sink)
+            .unwrap();
+        assert_eq!(remote_tags(), "");
+
         r.add_remote("mirror", "https://example.invalid/x.git")
             .unwrap();
         r.set_remote_url("mirror", "https://example.invalid/y.git")

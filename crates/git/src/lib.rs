@@ -21,9 +21,11 @@ pub mod ops;
 pub mod rebase;
 pub mod refs;
 pub mod repo;
+pub mod search;
 pub mod stage;
 pub mod status;
 pub mod watch;
+pub mod web;
 pub mod worktrees;
 
 use std::fmt::Display;

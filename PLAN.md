@@ -184,16 +184,52 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   progress counters collapsed, and errors in full; the status bar shows the telling line
   (`activity::summary`). Cancel kills git's process group (`cli::run_streaming`). The
   dialogs don't remember choices or read `pull.rebase` yet (Follow-ups).*
-- [ ] M4-4 Commit context menu: checkout, create branch/tag here, cherry-pick, revert, reset
+- [x] M4-4 Commit context menu: checkout, create branch/tag here, cherry-pick, revert, reset
       (soft / mixed / hard), interactive rebase from here, copy id/message, create patch,
       open on GitHub/GitLab/Bitbucket.
-- [ ] M4-5 Interactive rebase editor (drag to reorder, pick/reword/edit/squash/fixup/drop).
-- [ ] M4-6 Tags: create (lightweight / annotated), delete, push, checkout.
-- [ ] M4-7 Stashes: create (with untracked, staged only, keep index), apply, pop, drop,
+  *`repo_view/commit_menu.rs`: right-click a graph row (it selects it) for check out
+  (asks: detached), new branch / tag here, cherry-pick, revert, reset ▸ soft / mixed / hard
+  (hard asks), copy id / short id / summary / message, save as patch (folder prompt,
+  `format-patch -1`), and Open on GitHub / GitLab / Bitbucket (`git::web`, from the
+  upstream's remote or origin). Cherry-pick and revert are off for merge commits (no `-m`
+  choice yet, Follow-ups). "Interactive rebase from here" comes with its editor in M4-5.*
+- [x] M4-5 Interactive rebase editor (drag to reorder, pick/reword/edit/squash/fixup/drop).
+  *Commit menu ▸ "Interactive Rebase main from Here…" replaces the graph with
+  `rebase_editor.rs`: the commits after the selected one, newest first; drag or Alt+↑/↓
+  to reorder, P R E S F D or each row's menu for the action, a message area for reword
+  (starts from the old message) and squash (the combined commit's), autostash, and a
+  warning when merges in the range would be flattened. Start is off until something
+  changed and while the plan has a problem (`rebase_model.rs`, tested). It runs
+  `git::rebase::run`; a stop (conflict, `edit`) shows "Rebase paused: …" and the banner.
+  `rebase::plan` now refuses a base outside HEAD's history, a squash message survives a
+  later fixup in its group, and old todo/message folders are cleared.*
+- [x] M4-6 Tags: create (lightweight / annotated), delete, push, checkout.
+  *`repo_view/tag_ops.rs`: New Tag… (commit menu, palette, at the selection) takes a name
+  and an optional message (annotated when given) and can push it; the sidebar's tag menu
+  adds Push Tag and Delete… (optionally on the remote too); palette "Push All Tags";
+  checkout was already there (asks, detached). The dialog form gained a message field.*
+- [x] M4-7 Stashes: create (with untracked, staged only, keep index), apply, pop, drop,
       view diff, create branch from stash.
-- [ ] M4-8 Remotes: add / edit / remove, fetch one, prune.
-- [ ] M4-9 Search: commits by message, author, id, file path; content search (`-S`/`-G`);
+  *`repo_view/stash_ops.rs`: Stash (toolbar, palette) opens a dialog with a message and
+  the three options; clicking a stash in the sidebar shows it in the details pane; its
+  menu has Apply, Pop, New Branch from Stash…, Drop… (asks) and Copy Message. Each
+  index-based command first checks `stash@{n}` is still the stash that was shown. The
+  untracked part of a stash is not listed yet (Follow-ups).*
+- [x] M4-8 Remotes: add / edit / remove, fetch one, prune.
+  *Right-click a remote's folder in the sidebar: Fetch <remote>, Prune Deleted Branches,
+  Edit… (rename and URL), Remove… (asks), Copy URL. Add Remote… (name, URL, fetch now)
+  is on the Remotes header and in the palette. Every section header has a menu now
+  (New Branch…, Add Remote…, New Tag… / Push All Tags, Stash Changes…, Collapse), and
+  remotes nothing was fetched from still show their folder (`repo_view/section_menu.rs`,
+  `remote_ops.rs`).*
+- [x] M4-9 Search: commits by message, author, id, file path; content search (`-S`/`-G`);
       results highlighted in the graph.
+  *Ctrl/Cmd+F, the rail's Search or "Find Commits…" opens a bar over the graph: Message,
+  Author, Commit ID, File Path, Content (`-S`) or Content (regex, `-G`). `git::search`
+  streams matches from `git log` over the graph's scope (tested); ids match the loaded
+  graph. Other rows dim, "3 of 17" counts, Enter / Shift+Enter or the arrows step
+  through the matches, Esc closes; typing searches again after a 250 ms pause and a
+  scope change re-runs it (`repo_view/search.rs`).*
 - [ ] M4-10 Blame view and file history (follow renames), jump to commit.
 - [ ] M4-11 Reflog view and restore.
 - [ ] M4-12 Repository file tree at any commit; open / save file at revision.
@@ -241,6 +277,12 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [ ] M7-3 Updates, crash logs, docs site.
 
 ## Follow-ups
+
+- Search: a pickaxe search that prints nothing for a long time is only stopped at its next match (`run_lines` checks cancel between lines); kill it from a watcher like `run_streaming`.
+
+- Stash details: also list the untracked files a stash holds (its third parent).
+
+- Cherry-pick and revert of merge commits: ask which parent is the mainline (`-m`).
 
 - Fetch / Pull / Push dialogs: remember the last choices per repository and default Pull's
   rebase option from `pull.rebase`.
