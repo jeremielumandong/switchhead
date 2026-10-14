@@ -39,3 +39,12 @@ The repository was created with an MIT license, so the workspace is MIT (Switchy
 Apache-2.0; ported code is the same author's). `rust-toolchain.toml` pins 1.98.1 like
 Switchyard; the workspace `rust-version` is 1.97 because the dev container cannot download
 1.98.1 (see Gotchas).
+
+## 2026-10-14 — Rebase messages through `exec` lines
+
+PLAN M1-11 suggested a `GIT_EDITOR` script for reworded messages. A script has to tell
+which commit git is asking about, and must be a shell script on every platform. Instead,
+`rebase::run` writes each new message to a file and follows the commit with
+`exec git commit --amend --allow-empty --cleanup=strip -q -F '<file>'` (after the last
+squash/fixup of a group). `GIT_SEQUENCE_EDITOR` is just `cp '<todo>'`. Hooks still run, and
+a failing amend stops the rebase like any `exec`.
