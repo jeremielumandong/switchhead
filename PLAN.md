@@ -247,8 +247,9 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 
 ## M5 — Assistant (coding CLIs)
 
-- [ ] M5-1 Port `switchyard-agents` as `switchhead-agents` (Claude Code, Codex CLI, Gemini
+- [x] M5-1 Port `switchyard-agents` as `switchhead-agents` (Claude Code, Codex CLI, Gemini
       CLI, custom; private temp dir; cancel; stream parsing). Git system prompt.
+  `crates/agents` is Switchyard's crate with the MCP server renamed `switchhead` (`switchhead mcp`, `SWITCHHEAD_*` env) and a git system prompt (read-only tools; proposals as a message, resolved files or a ```bash block). Adapters, runner, private temp dir, cancel and the replay tests came over unchanged; the replay fixtures still hold Switchyard's tool names, which only exercise the parsers.
 - [ ] M5-2 `switchhead-mcp`: read-only git MCP server (`switchhead mcp`, hidden argument
       checked in `main` before GPUI starts): `status`, `log`, `show`, `diff` (staged /
       unstaged / range), `branches`, `blame`, `file_at`, `conflicts`. Scoped to one repo.

@@ -1,8 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["crates/git", "crates/app"]
+members = ["crates/git", "crates/agents", "crates/app"]
 exclude = ["vendor/gpui-base", "vendor/gpui-fast"]
-default-members = ["crates/git", "crates/app"]
+default-members = ["crates/git", "crates/agents", "crates/app"]
 
 [workspace.package]
 version = "0.0.1"
