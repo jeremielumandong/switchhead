@@ -184,6 +184,10 @@ impl Git {
     ) -> Result<Output> {
         let mut cmd = self.command(args);
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        // Its own process group, so cancelling also stops what git started (the per-remote
+        // fetches of `fetch --all`, ssh, transport helpers).
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
         let mut child = cmd.spawn().map_err(|e| match e.kind() {
             std::io::ErrorKind::NotFound => Error::GitMissing,
             _ => Error::Io(e),
@@ -196,31 +200,62 @@ impl Git {
             }
             buf
         });
-        let mut stderr_all = Vec::new();
-        if let Some(stderr) = child.stderr.take() {
+        // stderr is read on its own thread so a silent git (a stalled connection) can
+        // still be cancelled: this loop wakes every 50 ms to check.
+        let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        let stderr = child.stderr.take();
+        let err_thread = std::thread::spawn(move || {
+            let Some(stderr) = stderr else { return };
             // git ends progress updates with '\r'; split on both.
             let mut r = BufReader::new(stderr);
-            let mut chunk = Vec::new();
             loop {
-                if cancel.is_cancelled() {
-                    let _ = child.kill();
-                    break;
-                }
-                chunk.clear();
-                let n = read_until_any(&mut r, &mut chunk)?;
-                if n == 0 {
-                    break;
-                }
-                stderr_all.extend_from_slice(&chunk);
-                let line = String::from_utf8_lossy(&chunk);
-                let line = line.trim_end_matches(['\r', '\n']);
-                if !line.is_empty() {
-                    on_line(line);
+                let mut chunk = Vec::new();
+                match read_until_any(&mut r, &mut chunk) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {
+                        if tx.send(chunk).is_err() {
+                            break;
+                        }
+                    }
                 }
             }
+        });
+        let mut stderr_all = Vec::new();
+        let mut killed = false;
+        // When git has exited, a process it started (ssh, a transport helper) can keep
+        // stderr open: give the pipe a moment after the exit, then stop reading.
+        let mut exited: Option<Instant> = None;
+        loop {
+            if cancel.is_cancelled() && !killed {
+                kill_tree(&mut child);
+                killed = true;
+            }
+            if exited.is_none() && matches!(child.try_wait(), Ok(Some(_))) {
+                exited = Some(Instant::now());
+            }
+            if exited.is_some_and(|t| t.elapsed() > std::time::Duration::from_millis(500)) {
+                break;
+            }
+            match rx.recv_timeout(std::time::Duration::from_millis(50)) {
+                Ok(chunk) => {
+                    stderr_all.extend_from_slice(&chunk);
+                    let line = String::from_utf8_lossy(&chunk);
+                    let line = line.trim_end_matches(['\r', '\n']);
+                    if !line.is_empty() && !killed {
+                        on_line(line);
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+        // The reader ends with the pipe; only wait for it when the pipe is already closed.
+        if err_thread.is_finished() {
+            let _ = err_thread.join();
         }
         let status = child.wait()?;
-        let stdout = out_thread.join().unwrap_or_default();
+        // Like stderr, stdout can be held open by a process git left behind.
+        let stdout = join_within(out_thread, std::time::Duration::from_millis(500));
         let output = Output {
             stdout,
             stderr: stderr_all,
@@ -314,6 +349,34 @@ impl Git {
 }
 
 /// Read up to and including the next `\n` or `\r`.
+/// Kill git and, on Unix, its process group (see [`Git::run_streaming`]).
+fn kill_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        // procps `kill` needs `--` before a negative pid (a process group).
+        let _ = Command::new("kill")
+            .args(["-KILL", "--", &format!("-{}", child.id())])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    let _ = child.kill();
+}
+
+/// The thread's result if it ends within `limit`, else empty (the thread is left to end
+/// on its own).
+fn join_within(t: std::thread::JoinHandle<Vec<u8>>, limit: std::time::Duration) -> Vec<u8> {
+    let started = Instant::now();
+    while !t.is_finished() && started.elapsed() < limit {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    if t.is_finished() {
+        t.join().unwrap_or_default()
+    } else {
+        Vec::new()
+    }
+}
+
 fn read_until_any(r: &mut impl std::io::BufRead, out: &mut Vec<u8>) -> std::io::Result<usize> {
     let mut total = 0;
     loop {
@@ -360,6 +423,42 @@ fn command_error<S: AsRef<OsStr>>(args: &[S], code: Option<i32>, out: &Output) -
 mod tests {
     use super::*;
     use crate::testutil::TestRepo;
+
+    #[cfg(unix)]
+    #[test]
+    fn cancels_a_silent_command() {
+        let r = TestRepo::new();
+        let git = Git::new(r.path()).unwrap();
+        let cancel = Cancel::default();
+        let c = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            c.cancel();
+        });
+        let started = Instant::now();
+        // A transport that prints nothing for 20 s.
+        let err = git
+            .run_streaming(
+                &[
+                    "-c",
+                    "protocol.ext.allow=always",
+                    "fetch",
+                    "ext::sh -c sleep% 20",
+                ],
+                &cancel,
+                |_| {},
+            )
+            .unwrap_err();
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        assert!(err.to_string().contains("cancelled"), "{err}");
+        // The transport's own process is gone too.
+        let left = Command::new("pgrep")
+            .args(["-f", "sleep 20"])
+            .output()
+            .map(|o| o.stdout)
+            .unwrap_or_default();
+        assert!(left.is_empty(), "{}", String::from_utf8_lossy(&left));
+    }
 
     #[test]
     fn runs_and_reports_failures() {

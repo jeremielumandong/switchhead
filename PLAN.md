@@ -176,8 +176,14 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   Branch button / Ctrl+Shift+B at the selected commit. Names are checked like
   `check-ref-format --branch`. Compare walks `left...right` (`Scope::Compare`, ends at the
   merge bases); it does not yet mark which side a commit is on (Follow-ups).*
-- [ ] M4-3 Fetch (all remotes, prune), Pull (merge / rebase, autostash), Push (force-with-lease,
+- [x] M4-3 Fetch (all remotes, prune), Pull (merge / rebase, autostash), Push (force-with-lease,
       tags, set upstream) with progress, cancel and errors in the activity panel.
+  *`repo_view/remote_ops.rs`: Fetch / Pull / Push open an options dialog (`form.rs`, shared
+  with branch ops). Progress shows in the status bar with Cancel; every operation lands in
+  the activity panel (`activity.rs`, `repo_view/activity_panel.rs`) with git's output,
+  progress counters collapsed, and errors in full; the status bar shows the telling line
+  (`activity::summary`). Cancel kills git's process group (`cli::run_streaming`). The
+  dialogs don't remember choices or read `pull.rebase` yet (Follow-ups).*
 - [ ] M4-4 Commit context menu: checkout, create branch/tag here, cherry-pick, revert, reset
       (soft / mixed / hard), interactive rebase from here, copy id/message, create patch,
       open on GitHub/GitLab/Bitbucket.
@@ -235,6 +241,9 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [ ] M7-3 Updates, crash logs, docs site.
 
 ## Follow-ups
+
+- Fetch / Pull / Push dialogs: remember the last choices per repository and default Pull's
+  rebase option from `pull.rebase`.
 
 - Branch compare: mark each commit's side (left / right) in the graph, like
   `git log --left-right`.

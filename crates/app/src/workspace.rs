@@ -370,24 +370,9 @@ impl Workspace {
             return;
         };
         view.update(cx, |v, cx| match op {
-            ToolbarOp::Fetch => v.run_op(
-                "Fetching",
-                "Fetched",
-                |r, c, f| r.fetch(None, true, c, |l| f(l)),
-                cx,
-            ),
-            ToolbarOp::Pull => v.run_op(
-                "Pulling",
-                "Pulled",
-                |r, c, f| r.pull(Default::default(), c, |l| f(l)),
-                cx,
-            ),
-            ToolbarOp::Push => v.run_op(
-                "Pushing",
-                "Pushed",
-                |r, c, f| r.push(&Default::default(), c, |l| f(l)),
-                cx,
-            ),
+            ToolbarOp::Fetch => v.fetch_dialog(window, cx),
+            ToolbarOp::Pull => v.pull_dialog(window, cx),
+            ToolbarOp::Push => v.push_dialog(window, cx),
             ToolbarOp::Stash => v.run_op(
                 "Stashing",
                 "Stashed local changes",
@@ -901,29 +886,62 @@ impl Workspace {
             if v.state != switchhead_git::RepoState::Clean {
                 left.push(ui::chip(v.state.label(), p.modified).into_any_element());
             }
+            let view = self.active_repo().cloned();
+            let open_log = |id: &'static str, el: gpui_kit::Div| {
+                let view = view.clone();
+                el.id(id)
+                    .cursor_pointer()
+                    .hover(|s| s.opacity(0.85))
+                    .on_click(move |_, _, cx| {
+                        if let Some(v) = &view {
+                            v.update(cx, |v, cx| v.toggle_activity(cx));
+                        }
+                    })
+                    .into_any_element()
+            };
             match &v.op {
-                Some(OpStatus::Running { label, progress }) => left.push(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(rpx(6.))
-                        .min_w_0()
-                        .child(ui::pulse_dot("op", p.acc, 6.))
-                        .child(label.clone())
-                        .child(div().truncate().text_color(p.fg3).child(progress.clone()))
-                        .into_any_element(),
-                ),
-                Some(OpStatus::Done(m)) => left.push(
+                Some(OpStatus::Running { label, progress }) => {
+                    let view = view.clone();
+                    left.push(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(rpx(6.))
+                            .min_w_0()
+                            .child(ui::pulse_dot("op", p.acc, 6.))
+                            .child(label.clone())
+                            .child(div().truncate().text_color(p.fg3).child(progress.clone()))
+                            .child(
+                                div()
+                                    .id("op-cancel")
+                                    .flex_none()
+                                    .px(rpx(6.))
+                                    .rounded(px(4.))
+                                    .cursor_pointer()
+                                    .text_color(p.fg2)
+                                    .hover(|s| s.bg(p.hover).text_color(p.fg))
+                                    .child("Cancel")
+                                    .on_click(move |_, _, cx| {
+                                        if let Some(v) = &view {
+                                            v.update(cx, |v, _| v.cancel_op());
+                                        }
+                                    }),
+                            )
+                            .into_any_element(),
+                    )
+                }
+                Some(OpStatus::Done(m)) => left.push(open_log(
+                    "op-done",
                     div()
                         .flex()
                         .items_center()
                         .gap(rpx(5.))
                         .text_color(p.added)
                         .child(ui::dot(p.added, 6.))
-                        .child(m.clone())
-                        .into_any_element(),
-                ),
-                Some(OpStatus::Failed(m)) => left.push(
+                        .child(m.clone()),
+                )),
+                Some(OpStatus::Failed(m)) => left.push(open_log(
+                    "op-failed",
                     div()
                         .flex()
                         .items_center()
@@ -932,9 +950,27 @@ impl Workspace {
                         .text_color(p.deleted)
                         .child(ui::dot(p.deleted, 6.))
                         .child(div().truncate().child(m.clone()))
-                        .into_any_element(),
-                ),
+                        .child(div().flex_none().text_color(p.fg3).child("· details")),
+                )),
+                Some(OpStatus::Cancelled(m)) => left.push(open_log(
+                    "op-cancelled",
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(rpx(5.))
+                        .text_color(p.fg3)
+                        .child(ui::dot(p.fg3, 6.))
+                        .child(m.clone()),
+                )),
                 None => {}
+            }
+            if !v.activity().is_empty() {
+                right.push(open_log(
+                    "activity-toggle",
+                    div()
+                        .text_color(if v.activity_open { p.acc } else { p.fg3 })
+                        .child("Activity"),
+                ));
             }
             let count = ui::thousands(v.commit_count() as u64);
             right.push(
