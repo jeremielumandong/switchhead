@@ -56,6 +56,7 @@ actions!(
         FindCommits,
         ShowReflog,
         BrowseFiles,
+        Undo,
         ToggleActivity,
     ]
 );
@@ -99,6 +100,7 @@ pub fn commands() -> Vec<Command> {
         c("Find Commits…", "History", FindCommits, true),
         c("Show Reflog", "History", ShowReflog, true),
         c("Browse Files at Commit", "History", BrowseFiles, true),
+        c("Undo Last Reset or Discard", "Repository", Undo, true),
         c("Show All Branches", "History", ShowAllBranches, true),
         c(
             "Show Current Branch Only",
@@ -176,6 +178,9 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("secondary-,", ShowSettings, None),
         KeyBinding::new("secondary-shift-c", CopyCommitId, Some("Graph")),
         KeyBinding::new("secondary-f", FindCommits, Some("Graph")),
+        KeyBinding::new("secondary-z", Undo, Some("Graph && !Input")),
+        KeyBinding::new("secondary-z", Undo, Some("Changes && !Input")),
+        KeyBinding::new("secondary-z", Undo, Some("Files && !Input")),
         KeyBinding::new("up", SelectUp, Some("Changes && !Input")),
         KeyBinding::new("down", SelectDown, Some("Changes && !Input")),
         KeyBinding::new("home", SelectFirst, Some("Changes && !Input")),

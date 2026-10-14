@@ -237,10 +237,11 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   "Show Reflog" (palette, branch menu) opens HEAD's or a branch's reflog in place of the graph (`git::reflog`, read with gix; tested), with the entry's commit beside it. Reset Here (HEAD / current branch, asks), Move Branch Here (`branch -f`, asks), New Branch Here, Check Out and Show in Graph; the list reloads when refs change.
 - [x] M4-12 Repository file tree at any commit; open / save file at revision.
   "Browse Files at This Commit" (commit menu; palette "Browse Files at Commit" for the selection or HEAD) lists the commit's tree (`git::tree::list`, gix; tested) as folders with a filter, previews the selected file (text with line numbers; binary, large and submodule noted), and opens it in the system app from a temp copy, saves it elsewhere, or shows its history or blame. No syntax colors in the preview yet (same follow-up as blame).
-- [ ] M4-13 Undo: before a hard reset, discard or clean, snapshot the work tree and index
+- [x] M4-13 Undo: before a hard reset, discard or clean, snapshot the work tree and index
       (`git stash create`, kept under `refs/switchhead/undo/*`); ref moves undo through the
       reflog. Undo (Ctrl/Cmd+Z outside text inputs) restores the last risky action; old
       snapshots expire.
+  Hard reset, Discard (files, hunks, lines) and Delete untracked first save a snapshot (`git::undo`; tested): the index and the work tree (untracked files included, through a temp index, which `git stash create` leaves out) as commits under `refs/switchhead/undo/<ms>`, the newest 20 kept for 14 days. Ctrl/Cmd+Z in the graph or Local Changes (palette "Undo Last Reset or Discard") names the action, asks, and puts the branch, index and files back (only the discarded paths for a discard; refuses if another branch is checked out). Ref moves stay with the reflog view.
 
 ## M5 — Assistant (coding CLIs)
 

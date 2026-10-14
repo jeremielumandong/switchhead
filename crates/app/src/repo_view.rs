@@ -53,6 +53,7 @@ mod sidebar;
 mod stash_ops;
 mod tag_ops;
 mod tree;
+mod undo;
 
 use sidebar::{Section, SideRow};
 
@@ -1108,6 +1109,7 @@ impl Render for RepoView {
             .on_action(cx.listener(|this, _: &actions::BrowseFiles, window, cx| {
                 this.browse_selected(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &actions::Undo, window, cx| this.undo(window, cx)))
             .on_action(cx.listener(|this, _: &actions::StageAll, _, cx| {
                 this.changes.update(cx, |c, cx| c.stage_all(cx))
             }))
