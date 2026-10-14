@@ -161,7 +161,7 @@ Ask before adding anything else. Pin versions in `[workspace.dependencies]`.
 | Async (agents) | `tokio` (sync only) |
 | Serialization | `serde`, `serde_json` |
 | Errors / logs | `thiserror`, `anyhow`, `tracing`, `tracing-subscriber` |
-| Platform | `directories`, `chrono` (`clock` only) |
+| Platform | `directories`, `chrono` (`clock` only), `notify` 8 (file events; already in the tree via gpui-component) |
 | Testing | `tempfile` |
 
 ## Licensing
@@ -214,6 +214,10 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
 - gix's topo walk does not read `.git/shallow`: on a shallow clone it fails with "object
   could not be found" at the boundary. `log::walk` wraps the object store (`ShallowCut`) so
   boundary commits read as having no parents.
+- inotify (and so `notify` on Linux) reports opening a file as an event: the watcher drops
+  access events except close-after-write, or reading status would trigger another status.
+  A plain `git status` may rewrite the index (an index-refresh write, a real `.git` change);
+  the app's status runs with `GIT_OPTIONAL_LOCKS=0`, which does not.
 - The app reads `SWITCHHEAD_DATA` (data folder), `SWITCHHEAD_THEME` and `SWITCHHEAD_ZOOM`;
   screenshots: `Xvfb :99 &`, then `DISPLAY=:99 SWITCHHEAD_DATA=<tmp> switchhead <repo>` and
   `import -window root shot.png` (ImageMagick); `xdotool` drives clicks and keys.

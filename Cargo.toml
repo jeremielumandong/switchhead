@@ -29,6 +29,10 @@ gix = { version = "0.89", default-features = false, features = [
     "parallel",
 ] }
 
+# Native file events (inotify / FSEvents / ReadDirectoryChangesW) for the work tree and
+# `.git`; already in the tree through gpui-component. See docs/DECISIONS.md.
+notify = "8.2"
+
 # Channels from worker threads to the UI (the sync primitives only; no runtime).
 tokio = { version = "1", default-features = false, features = ["sync"] }
 

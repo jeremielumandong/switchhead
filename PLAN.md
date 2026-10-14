@@ -281,6 +281,7 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 ## Follow-ups
 
 - Blame: no syntax colors yet, and file history (`log --follow`) is read in one go rather than streamed or cancellable.
+- Watcher: events from ignored folders (`target/`, `node_modules/`) still re-read status during a build; filter them with gix's excludes before reporting.
 - Search: a pickaxe search that prints nothing for a long time is only stopped at its next match (`run_lines` checks cancel between lines); kill it from a watcher like `run_streaming`.
 
 - Stash details: also list the untracked files a stash holds (its third parent).
