@@ -278,6 +278,8 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [ ] M7-1 Packaging (AppImage, macOS .app/.pkg, Windows installer) from Switchyard's scripts.
 - [ ] M7-2 Performance CI: open-repo and graph-scroll timings on git/git and linux.
 - [ ] M7-3 Updates, crash logs, docs site.
+  Website landed: `site/` (live graph sample from switchhead's own history, tour, themes),
+  published by `.github/workflows/pages.yml`; updates and crash logs still to do.
 
 ## Follow-ups
 
