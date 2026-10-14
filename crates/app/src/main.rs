@@ -19,6 +19,7 @@ mod graph_paint;
 mod image_diff;
 mod log_file;
 mod manager;
+mod merge_view;
 mod omarchy;
 mod palette;
 mod repo_view;

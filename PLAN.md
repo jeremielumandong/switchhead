@@ -145,9 +145,14 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   versions with pixel size (read from the header) and file size; Swipe and Onion skin
   follow the pointer. Other binaries show their kind (magic bytes) and size change. Local
   binaries read HEAD / index blobs in process (`diff::read_at`). SVG stays a text diff.*
-- [ ] M3-6 Merge conflict helper: list conflicted files, choose ours/theirs, built-in 3-way
+- [x] M3-6 Merge conflict helper: list conflicted files, choose ours/theirs, built-in 3-way
       merge editor (base/ours/theirs/result), open external merge tool, mark resolved,
       continue / abort banner for merge, rebase, cherry-pick, revert.
+  *`merge_view.rs`: a conflicted file opens an editable result with one card per conflict
+  (ours / base / theirs, pick either, both, or base), All Ours / All Theirs, Open in
+  `merge.tool`, Mark Resolved (asks if markers remain). Binary and delete conflicts offer
+  whole-file choices (Keep / Delete). The repo banner shows the operation, conflict count,
+  Abort (confirmed), Skip and Continue. CRLF files and a MERGE_MSG prefill: Follow-ups.*
 
 ## M4 — Branches, remotes, history (Fork parity)
 
@@ -209,6 +214,9 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [ ] M7-3 Updates, crash logs, docs site.
 
 ## Follow-ups
+
+- Merge helper: keep CRLF line endings when writing the result; prefill the commit box
+  from `MERGE_MSG` during a merge.
 
 - Log without a commit-graph file: gix's topo walk computes in-degrees over the whole
   history before the first commit (1.9 s on git/git). Offer to run `git commit-graph write

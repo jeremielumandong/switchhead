@@ -261,6 +261,30 @@ impl Repo {
         Ok(())
     }
 
+    /// Resolve conflicted paths by deleting them (`git rm`), e.g. a file deleted on one side.
+    pub fn resolve_by_deleting(&self, paths: &[&Path]) -> Result<()> {
+        self.run_paths(vec![os("rm"), os("-q")], paths)?;
+        Ok(())
+    }
+
+    /// The configured external merge tool (`merge.tool`), if any.
+    /// Read through `git` so a tool set after the repository was opened counts.
+    pub fn merge_tool(&self) -> Option<String> {
+        self.git()
+            .ok()?
+            .text(&["config", "--get", "merge.tool"])
+            .ok()
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty())
+    }
+
+    /// Run the configured merge tool on one conflicted path and wait for it to close
+    /// (`git mergetool --no-prompt`). git stages the file when the tool reports success.
+    pub fn run_merge_tool(&self, path: &Path) -> Result<()> {
+        self.run_paths(vec![os("mergetool"), os("--no-prompt")], &[path])?;
+        Ok(())
+    }
+
     /// Check out the ours (`--ours`) or theirs (`--theirs`) side of conflicted paths.
     pub fn checkout_side(&self, paths: &[&Path], theirs: bool) -> Result<()> {
         let side = if theirs { "--theirs" } else { "--ours" };
@@ -843,6 +867,27 @@ mod tests {
             },
         )
         .unwrap();
+    }
+
+    #[test]
+    fn resolves_a_delete_conflict_by_deleting() {
+        let t = TestRepo::new();
+        let r = repo(&t);
+        t.commit_file("f.txt", "base\n", "base");
+        r.create_branch("other", "HEAD", false).unwrap();
+        t.git(&["rm", "-q", "f.txt"]);
+        t.git(&["commit", "-q", "-m", "delete"]);
+        r.checkout("other").unwrap();
+        t.commit_file("f.txt", "changed\n", "change");
+        r.checkout("main").unwrap();
+        assert!(r.merge("other", MergeMode::Default).is_err());
+        assert_eq!(r.merge_tool(), None);
+        r.resolve_by_deleting(&[Path::new("f.txt")]).unwrap();
+        r.continue_operation().unwrap();
+        assert_eq!(r.state(), RepoState::Clean);
+        assert!(!t.join("f.txt").exists());
+        t.git(&["config", "merge.tool", "meld"]);
+        assert_eq!(r.merge_tool().as_deref(), Some("meld"));
     }
 
     #[test]

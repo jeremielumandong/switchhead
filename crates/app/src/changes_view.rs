@@ -33,6 +33,7 @@ use crate::appearance::{rpx, ts};
 use crate::changes_model::{Badge, LineSelection, Lists, Selection, Side};
 use crate::commit_box::{CommitBox, CommitEvent};
 use crate::diff_view::{self, Content, Loaded, highlight_theme, theme_key};
+use crate::merge_view::{MergeEvent, MergeView};
 use crate::store::DiffPrefs;
 use crate::theme::{MONO, Palette, SANS, palette};
 use crate::ui;
@@ -88,6 +89,8 @@ pub struct ChangesView {
     focus_commit: bool,
     /// Tracked files marked assume-unchanged or skip-worktree.
     hidden: Rc<Vec<status::Hidden>>,
+    /// The merge helper for the shown conflicted file.
+    merge: Option<(Entity<MergeView>, Subscription)>,
     _subs: Vec<Subscription>,
 }
 
@@ -132,6 +135,7 @@ impl ChangesView {
             commit: None,
             focus_commit: false,
             hidden: Rc::default(),
+            merge: None,
             _subs: subs,
         }
     }
@@ -181,6 +185,45 @@ impl ChangesView {
             });
         })
         .detach();
+    }
+
+    /// Conflicted files.
+    pub fn conflicts(&self) -> usize {
+        self.status.conflicted().count()
+    }
+
+    /// The shown file, when it is conflicted.
+    fn shown_conflict(&self) -> Option<(PathBuf, status::Conflict)> {
+        let shown = self.shown.as_ref().filter(|s| s.side == Side::Unstaged)?;
+        let e = self.status.entries.iter().find(|e| e.path == shown.path)?;
+        Some((e.path.clone(), e.conflict()?))
+    }
+
+    /// The merge helper for the shown conflicted file (made on first render).
+    fn merge_view(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<Entity<MergeView>> {
+        let Some((path, kind)) = self.shown_conflict() else {
+            self.merge = None;
+            return None;
+        };
+        if let Some((m, _)) = &self.merge
+            && m.read(cx).path == path
+        {
+            return Some(m.clone());
+        }
+        let repo = self.repo.clone();
+        let m = cx.new(|cx| MergeView::new(repo, path, kind, window, cx));
+        let sub = cx.subscribe(&m, |this, _, ev: &MergeEvent, cx| match ev {
+            MergeEvent::Resolved => {
+                this.merge = None;
+                this.refresh(cx);
+            }
+        });
+        self.merge = Some((m.clone(), sub));
+        Some(m)
     }
 
     /// Show the commit box and put the cursor in its subject.
@@ -1094,13 +1137,16 @@ impl Render for ChangesView {
                             ),
                     ),
                 );
-        let right = div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(p.surface)
-            .child(self.render_diff_toolbar(&p, cx))
-            .child(self.render_diff(&p, row_h, cx));
+        let right = match self.merge_view(window, cx) {
+            Some(m) => div().size_full().child(m),
+            None => div()
+                .size_full()
+                .flex()
+                .flex_col()
+                .bg(p.surface)
+                .child(self.render_diff_toolbar(&p, cx))
+                .child(self.render_diff(&p, row_h, cx)),
+        };
         div()
             .id("changes")
             .key_context("Changes")

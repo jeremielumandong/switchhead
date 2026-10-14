@@ -257,11 +257,15 @@ impl RepoView {
         let repo = self.repo.clone();
         let task = cx
             .background_executor()
-            .spawn(async move { watch::fingerprint(&repo) });
+            .spawn(async move { (watch::fingerprint(&repo), repo.state()) });
         cx.spawn(async move |this, cx| {
-            let fp = task.await;
+            let (fp, state) = task.await;
             let _ = this.update(cx, |v, cx| {
                 v.checking = false;
+                if v.state != state {
+                    v.state = state;
+                    cx.notify();
+                }
                 // While a walk or an operation runs, its own reload covers the change;
                 // keep the old fingerprint so a change it missed is caught next time.
                 if v.loading || matches!(v.op, Some(OpStatus::Running { .. })) {
@@ -1276,6 +1280,30 @@ impl Render for RepoView {
                 this.changes.update(cx, |c, cx| c.unstage_all(cx))
             }))
             .when(self.sidebar, |d| d.child(self.render_sidebar(&p, cx)))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .flex()
+                    .flex_col()
+                    .children(self.render_banner(&p, window, cx))
+                    .child(self.render_mode(&p, rem, cx)),
+            )
+    }
+}
+
+impl RepoView {
+    fn render_mode(
+        &self,
+        p: &Palette,
+        rem: gpui_kit::Pixels,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .flex_1()
+            .min_h_0()
+            .flex()
             .when(self.mode == Mode::Changes, |d| {
                 d.child(
                     div()
@@ -1293,7 +1321,7 @@ impl Render for RepoView {
                             .child(
                                 resizable_panel()
                                     .size_range(rem * (120. / 13.)..gpui_kit::Pixels::MAX)
-                                    .child(self.render_graph(&p, cx)),
+                                    .child(self.render_graph(p, cx)),
                             )
                             .child(
                                 resizable_panel()
@@ -1304,6 +1332,124 @@ impl Render for RepoView {
                     ),
                 )
             })
+            .into_any_element()
+    }
+
+    /// The bar shown while a merge, rebase, cherry-pick, revert or `am` is stopped:
+    /// conflicts left, Continue, Skip and Abort.
+    fn render_banner(
+        &self,
+        p: &Palette,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        self.state.command()?;
+        let conflicts = self.changes.read(cx).conflicts();
+        let running = matches!(self.op, Some(OpStatus::Running { .. }));
+        let can_skip = !matches!(self.state, RepoState::Merge);
+        let what = match conflicts {
+            0 => "No conflicts left: continue when ready".to_owned(),
+            1 => "1 conflicted file".to_owned(),
+            n => format!("{n} conflicted files"),
+        };
+        let label = self.state.label();
+        let button = |id: &'static str, text: &'static str, kind: ui::Kind, enabled: bool| {
+            ui::button(id, text, kind, p)
+                .h(rpx(22.))
+                .when(!enabled, |d| d.opacity(0.5))
+                .when(enabled, |d| d.cursor_pointer())
+        };
+        Some(
+            div()
+                .flex_none()
+                .h(rpx(36.))
+                .px(rpx(12.))
+                .flex()
+                .items_center()
+                .gap(rpx(8.))
+                .bg(p.modified.opacity(0.12))
+                .border_b_1()
+                .border_color(p.modified.opacity(0.4))
+                .child(ui::chip(label, p.modified))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(ts::BODY)
+                        .text_color(if conflicts > 0 { p.fg } else { p.added })
+                        .child(what),
+                )
+                .when(conflicts > 0 && self.mode == Mode::Commits, |d| {
+                    d.child(
+                        button("op-resolve", "Resolve Conflicts", ui::Kind::Secondary, true)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.set_mode(Mode::Changes, window, cx)
+                            })),
+                    )
+                })
+                .child(
+                    button("op-abort", "Abort…", ui::Kind::Secondary, !running).on_click(
+                        cx.listener(move |this, _, window, cx| this.confirm_abort(window, cx)),
+                    ),
+                )
+                .when(can_skip, |d| {
+                    d.child(
+                        button("op-skip", "Skip", ui::Kind::Secondary, !running).on_click(
+                            cx.listener(|this, _, _, cx| {
+                                this.run_op("Skipping", "Skipped", |r, _, _| r.skip_operation(), cx)
+                            }),
+                        ),
+                    )
+                })
+                .child(
+                    button(
+                        "op-continue",
+                        "Continue",
+                        ui::Kind::Primary,
+                        conflicts == 0 && !running,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if this.changes.read(cx).conflicts() == 0 {
+                            this.run_op(
+                                "Continuing",
+                                "Continued",
+                                |r, _, _| r.continue_operation(),
+                                cx,
+                            );
+                        }
+                    })),
+                )
+                .into_any_element(),
+        )
+    }
+
+    fn confirm_abort(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        use gpui_kit::component::WindowExt as _;
+        use gpui_kit::component::button::ButtonVariant;
+        if matches!(self.op, Some(OpStatus::Running { .. })) {
+            return;
+        }
+        let label = self.state.label().to_lowercase();
+        let this = cx.entity().downgrade();
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            let this = this.clone();
+            alert
+                .confirm()
+                .title(format!("Stop {label}?"))
+                .description(
+                    "The branch goes back to where it was before, and conflict resolutions \
+                     made so far are lost.",
+                )
+                .ok_text("Abort")
+                .ok_variant(ButtonVariant::Danger)
+                .on_ok(move |_, _, cx| {
+                    let _ = this.update(cx, |v, cx| {
+                        v.run_op("Aborting", "Aborted", |r, _, _| r.abort_operation(), cx)
+                    });
+                    true
+                })
+        });
     }
 }
 
