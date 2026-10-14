@@ -41,6 +41,7 @@ impl RepoView {
             ok: "Fetch",
             danger: false,
             name: None,
+            placeholder: "Branch name",
             taken: Vec::new(),
             checks,
         };
@@ -83,6 +84,7 @@ impl RepoView {
             ok: "Pull",
             danger: false,
             name: None,
+            placeholder: "Branch name",
             taken: Vec::new(),
             checks: vec![
                 ("Rebase local commits instead of merging", false),
@@ -119,6 +121,7 @@ impl RepoView {
                     ok: "OK",
                     danger: false,
                     name: None,
+                    placeholder: "Branch name",
                     taken: Vec::new(),
                     checks: Vec::new(),
                 },
@@ -148,6 +151,7 @@ impl RepoView {
                     ok: "OK",
                     danger: false,
                     name: None,
+                    placeholder: "Branch name",
                     taken: Vec::new(),
                     checks: Vec::new(),
                 },
@@ -164,6 +168,7 @@ impl RepoView {
             ok: "Push",
             danger: false,
             name: None,
+            placeholder: "Branch name",
             taken: Vec::new(),
             checks: vec![
                 ("Track it as the upstream", !has_upstream),

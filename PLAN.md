@@ -184,9 +184,15 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   progress counters collapsed, and errors in full; the status bar shows the telling line
   (`activity::summary`). Cancel kills git's process group (`cli::run_streaming`). The
   dialogs don't remember choices or read `pull.rebase` yet (Follow-ups).*
-- [ ] M4-4 Commit context menu: checkout, create branch/tag here, cherry-pick, revert, reset
+- [x] M4-4 Commit context menu: checkout, create branch/tag here, cherry-pick, revert, reset
       (soft / mixed / hard), interactive rebase from here, copy id/message, create patch,
       open on GitHub/GitLab/Bitbucket.
+  *`repo_view/commit_menu.rs`: right-click a graph row (it selects it) for check out
+  (asks: detached), new branch / tag here, cherry-pick, revert, reset ▸ soft / mixed / hard
+  (hard asks), copy id / short id / summary / message, save as patch (folder prompt,
+  `format-patch -1`), and Open on GitHub / GitLab / Bitbucket (`git::web`, from the
+  upstream's remote or origin). Cherry-pick and revert are off for merge commits (no `-m`
+  choice yet, Follow-ups). "Interactive rebase from here" comes with its editor in M4-5.*
 - [ ] M4-5 Interactive rebase editor (drag to reorder, pick/reword/edit/squash/fixup/drop).
 - [ ] M4-6 Tags: create (lightweight / annotated), delete, push, checkout.
 - [ ] M4-7 Stashes: create (with untracked, staged only, keep index), apply, pop, drop,
@@ -241,6 +247,8 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [ ] M7-3 Updates, crash logs, docs site.
 
 ## Follow-ups
+
+- Cherry-pick and revert of merge commits: ask which parent is the mainline (`-m`).
 
 - Fetch / Pull / Push dialogs: remember the last choices per repository and default Pull's
   rebase option from `pull.rebase`.

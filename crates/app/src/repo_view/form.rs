@@ -27,6 +27,8 @@ pub(super) struct Form {
     pub danger: bool,
     /// The name field's starting text (`None`: no field).
     pub name: Option<String>,
+    /// The name field's placeholder.
+    pub placeholder: &'static str,
     /// Names the field must not take (existing branches).
     pub taken: Vec<String>,
     pub checks: Vec<(&'static str, bool)>,
@@ -46,10 +48,11 @@ impl RepoView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let placeholder = form.placeholder;
         let input = form.name.as_ref().map(|initial| {
             let initial = initial.clone();
             cx.new(|cx| {
-                let mut s = InputState::new(window, cx).placeholder("Branch name");
+                let mut s = InputState::new(window, cx).placeholder(placeholder);
                 s.set_value(initial, window, cx);
                 s
             })
@@ -129,7 +132,7 @@ impl RepoView {
                     let problem = branch_name_problem(&name).map(str::to_owned).or_else(|| {
                         form.taken
                             .contains(&name)
-                            .then(|| format!("A branch named {name} already exists"))
+                            .then(|| format!("{name} already exists"))
                     });
                     if problem.is_some() {
                         *error.borrow_mut() = problem;

@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use gpui_kit::AppContext as _;
+use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::resizable::{ResizableState, resizable_panel, v_resizable};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -40,6 +41,7 @@ use crate::ui;
 
 mod activity_panel;
 mod branch_ops;
+mod commit_menu;
 mod form;
 mod remote_ops;
 mod sidebar;
@@ -778,6 +780,14 @@ impl RepoView {
                 this.sync_details(false, cx);
                 cx.notify();
             }))
+            .capture_any_mouse_down(cx.listener(
+                move |this, ev: &gpui_kit::MouseDownEvent, window, cx| {
+                    if ev.button == gpui_kit::MouseButton::Right {
+                        window.focus(&this.focus, cx);
+                        this.select_for_menu(i, cx);
+                    }
+                },
+            ))
             .child(graph)
             .child(
                 div()
@@ -850,7 +860,7 @@ impl RepoView {
                 .child(msg)
                 .into_any_element()
         } else {
-            uniform_list(
+            let list = uniform_list(
                 "graph",
                 count,
                 cx.processor(move |this, range: Range<usize>, _w, cx| {
@@ -862,9 +872,17 @@ impl RepoView {
                 }),
             )
             .track_scroll(&self.scroll)
-            .flex_1()
-            .min_h_0()
-            .into_any_element()
+            .size_full();
+            let view = cx.entity().downgrade();
+            div()
+                .id("graph-menu")
+                .flex_1()
+                .min_h_0()
+                .child(list)
+                .context_menu(move |menu, window, cx| {
+                    commit_menu::build_commit_menu(menu, &view, window, cx)
+                })
+                .into_any_element()
         };
         div()
             .size_full()

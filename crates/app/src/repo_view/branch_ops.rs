@@ -33,6 +33,7 @@ impl RepoView {
             ok: "Create Branch",
             danger: false,
             name: Some(String::new()),
+            placeholder: "Branch name",
             taken: self.branch_names(),
             checks: vec![("Check out the new branch", true)],
         };
@@ -81,6 +82,7 @@ impl RepoView {
             ok: "Rename",
             danger: false,
             name: Some(old.clone()),
+            placeholder: "Branch name",
             taken,
             checks: Vec::new(),
         };
@@ -126,6 +128,7 @@ impl RepoView {
             ok: "Delete",
             danger: true,
             name: None,
+            placeholder: "Branch name",
             taken: Vec::new(),
             checks,
         };
@@ -174,6 +177,7 @@ impl RepoView {
             ok: "Delete",
             danger: true,
             name: None,
+            placeholder: "Branch name",
             taken: Vec::new(),
             checks: Vec::new(),
         };
