@@ -23,6 +23,7 @@ mod merge_view;
 mod omarchy;
 mod palette;
 mod repo_view;
+mod sidebar_model;
 mod split;
 mod store;
 mod theme;

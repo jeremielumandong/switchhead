@@ -23,7 +23,7 @@ use crate::appearance::{self, rpx, ts};
 use crate::diff_view::set_prefs;
 use crate::manager::ManagerState;
 use crate::palette::{Chip, PaletteEvent, PaletteView, RepoItem, Sources};
-use crate::repo_view::{OpStatus, RepoView};
+use crate::repo_view::{OpStatus, RepoView, RepoViewEvent};
 use crate::store::{self, DiffPrefs, Paths, State};
 use crate::theme::{self, MONO, Palette, SANS, ThemeId, palette};
 use crate::ui;
@@ -56,6 +56,8 @@ pub struct Workspace {
     /// Quick Launch, while open.
     palette: Option<(Entity<PaletteView>, gpui_kit::Subscription)>,
     _activation: gpui_kit::Subscription,
+    /// Each repository tab's event subscription, by its entity.
+    repo_subs: Vec<(gpui_kit::EntityId, gpui_kit::Subscription)>,
 }
 
 impl Workspace {
@@ -134,6 +136,7 @@ impl Workspace {
             _messages: messages,
             palette: None,
             _activation: activation,
+            repo_subs: Vec::new(),
         };
         for path in reopen {
             ws.open_path(path, false, cx);
@@ -189,6 +192,10 @@ impl Workspace {
             None => {
                 let name = repo.name().to_owned();
                 let view = cx.new(|cx| RepoView::new(repo, cx));
+                let sub = cx.subscribe(&view, |ws, _, ev: &RepoViewEvent, cx| match ev {
+                    RepoViewEvent::Open(path) => ws.open_path(path.clone(), true, cx),
+                });
+                self.repo_subs.push((view.entity_id(), sub));
                 self.tabs.push(Tab::Repo(view));
                 self.state.touch(&root, &name, store::now());
                 self.tabs.len() - 1
@@ -214,7 +221,10 @@ impl Workspace {
         if ix == 0 || ix >= self.tabs.len() {
             return;
         }
-        self.tabs.remove(ix);
+        if let Tab::Repo(v) = self.tabs.remove(ix) {
+            let id = v.entity_id();
+            self.repo_subs.retain(|(e, _)| *e != id);
+        }
         if self.active >= ix {
             self.active = self
                 .active

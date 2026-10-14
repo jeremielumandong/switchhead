@@ -16,10 +16,10 @@ use gpui_kit::AppContext as _;
 use gpui_kit::component::resizable::{ResizableState, resizable_panel, v_resizable};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, ClickEvent, Context, Entity, FocusHandle, Focusable, FontWeight, Hsla,
+    AnyElement, App, Context, Entity, FocusHandle, Focusable, FontWeight, Hsla,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, ScrollStrategy, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, Task, UniformListScrollHandle,
-    Window, canvas, div, px, svg, uniform_list,
+    Window, canvas, div, px, uniform_list,
 };
 use switchhead_git::cli::Cancel;
 use switchhead_git::graph::{GraphRows, Node, Segment};
@@ -36,6 +36,10 @@ use crate::commit_view::{CommitView, Navigate};
 use crate::graph_paint;
 use crate::theme::{MONO, Palette, palette};
 use crate::ui;
+
+mod sidebar;
+
+use sidebar::{Section, SideRow};
 
 /// Graph row height at 100 % zoom.
 const ROW_H: f32 = 24.0;
@@ -54,6 +58,15 @@ enum Msg {
     Tracking(Box<Refs>),
 }
 
+/// Something the workspace acts on.
+#[derive(Clone, Debug)]
+pub enum RepoViewEvent {
+    /// Open this folder (a submodule or worktree) in a tab.
+    Open(std::path::PathBuf),
+}
+
+impl gpui_kit::EventEmitter<RepoViewEvent> for RepoView {}
+
 /// A git operation started from the toolbar.
 #[derive(Clone, Debug)]
 pub enum OpStatus {
@@ -70,39 +83,6 @@ pub enum OpStatus {
     Failed(SharedString),
 }
 
-/// A sidebar section.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Section {
-    /// Local branches.
-    Branches,
-    /// Remote-tracking branches.
-    Remotes,
-    /// Tags.
-    Tags,
-    /// Stashes.
-    Stashes,
-}
-
-impl Section {
-    fn title(self) -> &'static str {
-        match self {
-            Section::Branches => "Branches",
-            Section::Remotes => "Remotes",
-            Section::Tags => "Tags",
-            Section::Stashes => "Stashes",
-        }
-    }
-
-    fn icon(self) -> &'static str {
-        match self {
-            Section::Branches => "icons/sh-git-branch.svg",
-            Section::Remotes => "icons/sh-cloud.svg",
-            Section::Tags => "icons/sh-tag.svg",
-            Section::Stashes => "icons/sh-archive.svg",
-        }
-    }
-}
-
 /// What the main area shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
@@ -110,24 +90,6 @@ pub enum Mode {
     Commits,
     /// Local Changes: unstaged and staged files.
     Changes,
-}
-
-/// One line of the sidebar (flattened, so the list can be virtualized).
-#[derive(Clone, Debug)]
-enum SideRow {
-    Header(Section, usize),
-    /// A ref: label, the commit, a detail on the right (ahead/behind), current branch,
-    /// and the revision to filter the graph by.
-    Ref {
-        text: SharedString,
-        id: Oid,
-        detail: Option<SharedString>,
-        current: bool,
-        rev: String,
-        indent: bool,
-    },
-    /// A remote's name above its branches.
-    Group(SharedString),
 }
 
 /// A repository tab.
@@ -160,6 +122,10 @@ pub struct RepoView {
     focus: FocusHandle,
     cancel: Cancel,
     collapsed: HashSet<Section>,
+    /// Collapsed branch folders (`b/feature`, `r/origin/...`).
+    collapsed_folders: HashSet<String>,
+    side_filter: Option<(Entity<gpui_kit::component::input::InputState>, Subscription)>,
+    side_filter_text: String,
     side_rows: Vec<SideRow>,
     details: Entity<CommitView>,
     details_split: Entity<ResizableState>,
@@ -217,6 +183,9 @@ impl RepoView {
             focus: cx.focus_handle(),
             cancel: Cancel::default(),
             collapsed: HashSet::from([Section::Tags]),
+            collapsed_folders: HashSet::new(),
+            side_filter: None,
+            side_filter_text: String::new(),
             side_rows: Vec::new(),
             details,
             details_split: cx.new(|_| ResizableState::default()),
@@ -605,329 +574,6 @@ impl RepoView {
         }));
     }
 
-    // ---------------------------------------------------------------- sidebar
-
-    fn rebuild_side(&mut self) {
-        let mut rows = Vec::new();
-        let r = &self.refs;
-        let sections = [
-            (Section::Branches, r.branches.len()),
-            (
-                Section::Remotes,
-                r.remotes.iter().filter(|b| !b.is_symbolic_head).count(),
-            ),
-            (Section::Tags, r.tags.len()),
-            (Section::Stashes, r.stashes.len()),
-        ];
-        for (section, count) in sections {
-            rows.push(SideRow::Header(section, count));
-            if self.collapsed.contains(&section) {
-                continue;
-            }
-            match section {
-                Section::Branches => {
-                    for b in &r.branches {
-                        let detail = b.tracking.as_ref().and_then(|t| {
-                            if t.gone {
-                                Some("gone".into())
-                            } else if t.ahead + t.behind > 0 {
-                                Some(ahead_behind(t.ahead, t.behind).into())
-                            } else {
-                                None
-                            }
-                        });
-                        rows.push(SideRow::Ref {
-                            text: b.name.clone().into(),
-                            id: b.id,
-                            detail,
-                            current: b.is_head,
-                            rev: format!("refs/heads/{}", b.name),
-                            indent: false,
-                        });
-                    }
-                }
-                Section::Remotes => {
-                    let mut last: Option<&str> = None;
-                    for b in r.remotes.iter().filter(|b| !b.is_symbolic_head) {
-                        if last != Some(b.remote.as_str()) {
-                            rows.push(SideRow::Group(b.remote.clone().into()));
-                            last = Some(b.remote.as_str());
-                        }
-                        rows.push(SideRow::Ref {
-                            text: b.name.clone().into(),
-                            id: b.id,
-                            detail: None,
-                            current: false,
-                            rev: format!("refs/remotes/{}", b.short()),
-                            indent: true,
-                        });
-                    }
-                }
-                Section::Tags => {
-                    for t in &r.tags {
-                        rows.push(SideRow::Ref {
-                            text: t.name.clone().into(),
-                            id: t.id,
-                            detail: None,
-                            current: false,
-                            rev: format!("refs/tags/{}", t.name),
-                            indent: false,
-                        });
-                    }
-                }
-                Section::Stashes => {
-                    for s in &r.stashes {
-                        rows.push(SideRow::Ref {
-                            text: s.message.clone().into(),
-                            id: s.id,
-                            detail: Some(format!("@{{{}}}", s.index).into()),
-                            current: false,
-                            rev: s.id.to_string(),
-                            indent: false,
-                        });
-                    }
-                }
-            }
-        }
-        self.side_rows = rows;
-    }
-
-    fn toggle_section(&mut self, s: Section, cx: &mut Context<Self>) {
-        if !self.collapsed.remove(&s) {
-            self.collapsed.insert(s);
-        }
-        self.rebuild_side();
-        cx.notify();
-    }
-
-    fn render_sidebar(&self, p: &Palette, cx: &mut Context<Self>) -> AnyElement {
-        let count = self.side_rows.len();
-        let list = uniform_list(
-            "refs",
-            count,
-            cx.processor(move |this, range: Range<usize>, _w, cx| {
-                let p = palette(cx);
-                range
-                    .filter_map(|i| this.side_rows.get(i).cloned().map(|r| (i, r)))
-                    .map(|(i, row)| this.render_side_row(i, row, &p, cx))
-                    .collect::<Vec<_>>()
-            }),
-        )
-        .track_scroll(&self.side_scroll)
-        .flex_1()
-        .min_h_0()
-        .py(rpx(4.));
-        div()
-            .w(rpx(240.))
-            .flex_none()
-            .flex()
-            .flex_col()
-            .bg(p.panel)
-            .border_r_1()
-            .border_color(p.bd)
-            .child(
-                div()
-                    .h(rpx(32.))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .px(rpx(12.))
-                    .gap(rpx(8.))
-                    .border_b_1()
-                    .border_color(p.bd)
-                    .child(
-                        div()
-                            .flex_1()
-                            .truncate()
-                            .text_size(ts::UI)
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(self.title()),
-                    )
-                    .when(self.state != RepoState::Clean, |d| {
-                        d.child(ui::chip(self.state.label(), p.modified))
-                    }),
-            )
-            .child(self.render_nav(p, cx))
-            .child(list)
-            .into_any_element()
-    }
-
-    /// "Local Changes" and "All Commits" above the refs.
-    fn render_nav(&self, p: &Palette, cx: &mut Context<Self>) -> AnyElement {
-        let changed = self.changes.read(cx).count();
-        let item = |id: &'static str, icon: &'static str, label: &'static str, mode: Mode| {
-            let active = self.mode == mode;
-            div()
-                .id(id)
-                .h(rpx(26.))
-                .flex()
-                .items_center()
-                .gap(rpx(8.))
-                .px(rpx(10.))
-                .rounded(px(4.))
-                .cursor_pointer()
-                .text_size(ts::BODY)
-                .text_color(if active { p.fg } else { p.fg2 })
-                .when(active, |d| d.bg(p.sel).font_weight(FontWeight::SEMIBOLD))
-                .when(!active, |d| d.hover(|s| s.bg(p.hover)))
-                .on_click(cx.listener(move |this, _, window, cx| this.set_mode(mode, window, cx)))
-                .child(svg().path(icon).size(rpx(14.)).text_color(p.fg3))
-                .child(div().flex_1().child(label))
-        };
-        div()
-            .flex_none()
-            .flex()
-            .flex_col()
-            .gap(rpx(1.))
-            .p(rpx(4.))
-            .border_b_1()
-            .border_color(p.bd)
-            .child(
-                item(
-                    "nav-changes",
-                    "icons/sh-file-diff.svg",
-                    "Local Changes",
-                    Mode::Changes,
-                )
-                .when(changed > 0, |d| {
-                    d.child(
-                        div()
-                            .px(rpx(6.))
-                            .rounded(px(8.))
-                            .bg(p.acc.opacity(0.16))
-                            .font_family(MONO)
-                            .text_size(ts::CAPTION)
-                            .text_color(p.acc)
-                            .child(changed.to_string()),
-                    )
-                }),
-            )
-            .child(item(
-                "nav-commits",
-                "icons/sh-git-commit-horizontal.svg",
-                "All Commits",
-                Mode::Commits,
-            ))
-            .into_any_element()
-    }
-
-    fn render_side_row(
-        &self,
-        i: usize,
-        row: SideRow,
-        p: &Palette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let base = div()
-            .id(("side", i))
-            .w_full()
-            .h(rpx(24.))
-            .flex()
-            .items_center()
-            .gap(rpx(6.))
-            .px(rpx(10.))
-            .text_size(ts::BODY);
-        match row {
-            SideRow::Header(section, n) => {
-                let open = !self.collapsed.contains(&section);
-                base.mt(rpx(if i == 0 { 0. } else { 6. }))
-                    .cursor_pointer()
-                    .text_color(p.fg2)
-                    .hover(|s| s.text_color(p.fg))
-                    .on_click(cx.listener(move |this, _, _, cx| this.toggle_section(section, cx)))
-                    .child(
-                        div()
-                            .w(rpx(10.))
-                            .text_size(ts::CAPTION)
-                            .text_color(p.fg3)
-                            .child(if open { "▾" } else { "▸" }),
-                    )
-                    .child(svg().path(section.icon()).size(rpx(13.)).text_color(p.fg3))
-                    .child(
-                        div()
-                            .flex_1()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_size(ts::LABEL)
-                            .child(section.title()),
-                    )
-                    .child(
-                        div()
-                            .font_family(MONO)
-                            .text_size(ts::CAPTION)
-                            .text_color(p.fg3)
-                            .child(n.to_string()),
-                    )
-                    .into_any_element()
-            }
-            SideRow::Group(name) => base
-                .pl(rpx(28.))
-                .text_color(p.fg3)
-                .text_size(ts::SMALL)
-                .child(name)
-                .into_any_element(),
-            SideRow::Ref {
-                text,
-                id,
-                detail,
-                current,
-                rev,
-                indent,
-            } => {
-                let filtered = self.scope == Scope::Revs(vec![rev.clone()]);
-                let selected = self.selected.is_some_and(|s| self.log.id(s) == id);
-                base.pl(rpx(if indent { 40. } else { 28. }))
-                    .cursor_pointer()
-                    .rounded(px(4.))
-                    .text_color(if current { p.fg } else { p.fg2 })
-                    .when(current, |d| d.font_weight(FontWeight::SEMIBOLD))
-                    .when(selected, |d| d.bg(p.sel))
-                    .hover(|s| s.bg(p.hover))
-                    .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
-                        if this.mode != Mode::Commits {
-                            this.set_mode(Mode::Commits, window, cx);
-                        }
-                        if ev.click_count() >= 2 {
-                            // Double click: show only this ref's history (again: all).
-                            let scope = if this.scope == Scope::Revs(vec![rev.clone()]) {
-                                Scope::All
-                            } else {
-                                Scope::Revs(vec![rev.clone()])
-                            };
-                            this.pending_select = Some(id);
-                            this.set_scope(scope, cx);
-                        } else {
-                            match this.log.row_of(&id) {
-                                Some(row) => this.select(row, cx),
-                                None => this.pending_select = Some(id),
-                            }
-                            cx.notify();
-                        }
-                    }))
-                    .child(ui::dot(
-                        if current {
-                            p.acc
-                        } else {
-                            gpui_kit::transparent_black()
-                        },
-                        6.,
-                    ))
-                    .child(div().flex_1().min_w_0().truncate().child(text))
-                    .when(filtered, |d| d.child(ui::chip("only", p.acc)))
-                    .when_some(detail, |d, t| {
-                        d.child(
-                            div()
-                                .flex_none()
-                                .font_family(MONO)
-                                .text_size(ts::CAPTION)
-                                .text_color(p.fg3)
-                                .child(t),
-                        )
-                    })
-                    .into_any_element()
-            }
-        }
-    }
-
     // ---------------------------------------------------------------- graph
 
     fn render_graph_header(&self, p: &Palette, graph_w: f32, cx: &mut Context<Self>) -> AnyElement {
@@ -1225,6 +871,7 @@ impl Render for RepoView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
         let rem = window.rem_size();
+        self.ensure_side_filter(window, cx);
         div()
             .id("repo")
             .key_context("Graph")

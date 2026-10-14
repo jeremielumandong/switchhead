@@ -156,8 +156,13 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 
 ## M4 — Branches, remotes, history (Fork parity)
 
-- [ ] M4-1 Sidebar: branches (tree by `/`), remotes, tags, stashes, submodules, worktrees;
+- [x] M4-1 Sidebar: branches (tree by `/`), remotes, tags, stashes, submodules, worktrees;
       filter box; ahead/behind badges; checkout by double-click.
+  *`repo_view/sidebar.rs` + `sidebar_model.rs` (tree and filter, tested): branches and each
+  remote's branches fold by `/`; the filter keeps matching refs with their folders open.
+  Double-click checks out a branch, a remote branch (tracking branch if new) or a tag
+  (asks: detached), and opens a submodule or linked worktree in a tab
+  (`worktrees.rs`, via `git`). "Show only this ref" moved from double-click to Alt-click.*
 - [ ] M4-2 Branch ops: create (from any commit), rename, delete (local/remote), checkout
       (with tracking), set upstream, merge into current (ff / no-ff / squash), rebase current
       onto, compare branches, push/delete remote branch.

@@ -123,6 +123,10 @@ pub struct Refs {
     pub tags: Vec<Tag>,
     /// Stashes, newest first.
     pub stashes: Vec<Stash>,
+    /// Worktrees, the main one first; filled by [`load_tracking`].
+    pub worktrees: Vec<crate::worktrees::Worktree>,
+    /// Submodules; filled by [`load_tracking`].
+    pub submodules: Vec<crate::worktrees::Submodule>,
 }
 
 impl Refs {
@@ -263,8 +267,17 @@ fn stashes(r: &gix::Repository) -> Result<Vec<Stash>> {
     Ok(out)
 }
 
-/// Fill each branch's upstream and ahead/behind counts with one `git for-each-ref`.
+/// Fill each branch's upstream and ahead/behind counts with one `git for-each-ref`, and
+/// the worktrees and submodules (these are best effort: a failure leaves them empty).
 pub fn load_tracking(repo: &Repo, refs: &mut Refs) -> Result<()> {
+    refs.worktrees = crate::worktrees::list_worktrees(repo).unwrap_or_else(|e| {
+        tracing::debug!(error = %e, "worktrees unavailable");
+        Vec::new()
+    });
+    refs.submodules = crate::worktrees::list_submodules(repo).unwrap_or_else(|e| {
+        tracing::debug!(error = %e, "submodules unavailable");
+        Vec::new()
+    });
     let out = repo.git()?.run(&[
         "for-each-ref",
         "--format=%(refname:short)%00%(upstream:short)%00%(upstream:track,nobracket)",
