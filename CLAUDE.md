@@ -127,6 +127,14 @@ headers of bundled assets):
   the user applies it (the app runs the command or writes the file) after reviewing it.
 - Never read, copy, store or proxy a coding CLI's credentials. Each CLI uses its own login.
 
+## Commits
+
+- Author every commit as the repository owner: `Jeremie Lumandong <jeremie.lumandong@outlook.com>`.
+  Before the first commit in a fresh clone run
+  `git config user.name "Jeremie Lumandong"` and
+  `git config user.email "jeremie.lumandong@outlook.com"` (the container's default identity
+  is Claude's). Keep the `Co-Authored-By: Claude ...` trailer in the message.
+
 ## Coding conventions
 
 - Edition 2024, stable toolchain.
