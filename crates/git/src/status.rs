@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use crate::{Error, Oid, Repo, Result, path_from_bytes};
+use crate::{Error, GixExt as _, Oid, Repo, Result, path_from_bytes};
 
 /// How one side of an entry (index or work tree) differs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -376,9 +376,95 @@ pub fn parse(out: &[u8]) -> Result<Status> {
     Ok(status)
 }
 
+/// How a tracked file is hidden from status.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HiddenFlag {
+    /// `update-index --assume-unchanged`.
+    AssumeUnchanged,
+    /// `update-index --skip-worktree`.
+    SkipWorktree,
+}
+
+/// A tracked file that `git status` no longer checks.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Hidden {
+    /// Path relative to the work tree root.
+    pub path: PathBuf,
+    /// Why it is hidden.
+    pub flag: HiddenFlag,
+}
+
+/// Files marked assume-unchanged or skip-worktree, read from the index in process.
+/// Skip-worktree entries are left out under sparse checkout, where git sets them itself.
+pub fn hidden(repo: &Repo) -> Result<Vec<Hidden>> {
+    use gix::index::entry::Flags;
+
+    let started = std::time::Instant::now();
+    let r = repo.local();
+    let sparse = r
+        .config_snapshot()
+        .boolean("core.sparseCheckout")
+        .unwrap_or(false);
+    let index = r.index_or_empty().gix()?;
+    let mut out = Vec::new();
+    for e in index.entries() {
+        let flag = if e.flags.contains(Flags::SKIP_WORKTREE) {
+            if sparse {
+                continue;
+            }
+            HiddenFlag::SkipWorktree
+        } else if e.flags.contains(Flags::ASSUME_VALID) {
+            HiddenFlag::AssumeUnchanged
+        } else {
+            continue;
+        };
+        out.push(Hidden {
+            path: path_from_bytes(e.path(&index)),
+            flag,
+        });
+    }
+    tracing::debug!(
+        ms = started.elapsed().as_millis() as u64,
+        n = out.len(),
+        "hidden files"
+    );
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lists_hidden_files() {
+        use crate::testutil::TestRepo;
+        let t = TestRepo::new();
+        t.commit_file("a.txt", "a\n", "a");
+        t.commit_file("b.txt", "b\n", "b");
+        let repo = Repo::open(t.path()).unwrap();
+        assert!(hidden(&repo).unwrap().is_empty());
+        repo.set_assume_unchanged(&[std::path::Path::new("a.txt")], true)
+            .unwrap();
+        repo.set_skip_worktree(&[std::path::Path::new("b.txt")], true)
+            .unwrap();
+        let h = hidden(&repo).unwrap();
+        assert_eq!(
+            h,
+            [
+                Hidden {
+                    path: "a.txt".into(),
+                    flag: HiddenFlag::AssumeUnchanged
+                },
+                Hidden {
+                    path: "b.txt".into(),
+                    flag: HiddenFlag::SkipWorktree
+                },
+            ]
+        );
+        repo.set_assume_unchanged(&[std::path::Path::new("a.txt")], false)
+            .unwrap();
+        assert_eq!(hidden(&repo).unwrap().len(), 1);
+    }
     use crate::testutil::TestRepo;
 
     fn paths<'a>(it: impl Iterator<Item = &'a Entry>) -> Vec<String> {

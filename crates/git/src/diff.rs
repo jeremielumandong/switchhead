@@ -665,6 +665,42 @@ pub fn read_blob(repo: &Repo, id: Oid) -> Result<Vec<u8>> {
     Ok(blob.data.clone())
 }
 
+/// Where [`read_at`] reads a file from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Source {
+    /// The commit HEAD points at.
+    Head,
+    /// The index (staged content).
+    Index,
+}
+
+/// The bytes of `path` in HEAD or the index (`None` when it is not there, or HEAD is
+/// unborn). Work-tree content is read from disk by the caller.
+pub fn read_at(repo: &Repo, path: &Path, source: Source) -> Result<Option<Vec<u8>>> {
+    let r = repo.local();
+    let rela = gix::path::to_unix_separators_on_windows(gix::path::into_bstr(path).gix()?);
+    let id = match source {
+        Source::Head => {
+            let Ok(commit) = r.head_commit() else {
+                return Ok(None);
+            };
+            let tree = commit.tree().gix()?;
+            match tree.lookup_entry_by_path(path).gix()? {
+                Some(e) if e.mode().is_blob() => e.object_id(),
+                _ => return Ok(None),
+            }
+        }
+        Source::Index => {
+            let index = r.index_or_empty().gix()?;
+            match index.entry_by_path(rela.as_ref()) {
+                Some(e) => e.id,
+                None => return Ok(None),
+            }
+        }
+    };
+    read_blob(repo, id).map(Some)
+}
+
 /// Diff two blobs (either may be absent, for added and deleted files).
 pub fn diff_blobs(
     repo: &Repo,

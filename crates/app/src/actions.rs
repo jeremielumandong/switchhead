@@ -40,6 +40,16 @@ actions!(
         CycleWhitespace,
         MoreContext,
         LessContext,
+        ShowLocalChanges,
+        ShowCommits,
+        StageAll,
+        UnstageAll,
+        ToggleStaged,
+        SelectAllFiles,
+        SwitchFileList,
+        WriteCommitMessage,
+        DiscardSelected,
+        NewBranch,
     ]
 );
 
@@ -86,6 +96,12 @@ pub fn commands() -> Vec<Command> {
             true,
         ),
         c("Copy Commit ID", "History", CopyCommitId, true),
+        c("Show Local Changes", "Changes", ShowLocalChanges, true),
+        c("Show All Commits", "History", ShowCommits, true),
+        c("Stage All Changes", "Changes", StageAll, true),
+        c("Unstage All Changes", "Changes", UnstageAll, true),
+        c("Commit…", "Changes", WriteCommitMessage, true),
+        c("New Branch…", "Branches", NewBranch, true),
         c(
             "Toggle Inline / Side-by-Side Diff",
             "Diff",
@@ -145,6 +161,22 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("secondary-p", QuickLaunch, None),
         KeyBinding::new("secondary-,", ShowSettings, None),
         KeyBinding::new("secondary-shift-c", CopyCommitId, Some("Graph")),
+        KeyBinding::new("up", SelectUp, Some("Changes && !Input")),
+        KeyBinding::new("down", SelectDown, Some("Changes && !Input")),
+        KeyBinding::new("home", SelectFirst, Some("Changes && !Input")),
+        KeyBinding::new("end", SelectLast, Some("Changes && !Input")),
+        KeyBinding::new("space", ToggleStaged, Some("Changes && !Input")),
+        KeyBinding::new("enter", ToggleStaged, Some("Changes && !Input")),
+        KeyBinding::new("secondary-a", SelectAllFiles, Some("Changes && !Input")),
+        KeyBinding::new("tab", SwitchFileList, Some("Changes && !Input")),
+        KeyBinding::new("secondary-shift-enter", WriteCommitMessage, None),
+        KeyBinding::new("secondary-shift-b", NewBranch, None),
+        KeyBinding::new(
+            "secondary-backspace",
+            DiscardSelected,
+            Some("Changes && !Input"),
+        ),
+        KeyBinding::new("delete", DiscardSelected, Some("Changes && !Input")),
     ]);
 }
 

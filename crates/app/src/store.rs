@@ -11,6 +11,9 @@ use crate::appearance::AppearanceSettings;
 /// Recent repositories kept in the list.
 pub const MAX_RECENT: usize = 50;
 
+/// Commit messages kept for the commit box's "Recent" menu.
+pub const MAX_MESSAGES: usize = 20;
+
 /// Where switchhead keeps its files.
 #[derive(Clone, Debug)]
 pub struct Paths {
@@ -66,6 +69,29 @@ pub struct State {
     pub appearance: AppearanceSettings,
     /// Diff view settings.
     pub diff: DiffPrefs,
+    /// Recently committed messages.
+    pub messages: RecentMessages,
+}
+
+/// Commit messages used recently, newest first (every repository; a GPUI global while
+/// the app runs).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RecentMessages(pub Vec<String>);
+
+impl gpui_kit::Global for RecentMessages {}
+
+impl RecentMessages {
+    /// Remember `message` at the front (once), keeping [`MAX_MESSAGES`].
+    pub fn push(&mut self, message: &str) {
+        let message = message.trim();
+        if message.is_empty() {
+            return;
+        }
+        self.0.retain(|m| m != message);
+        self.0.insert(0, message.to_owned());
+        self.0.truncate(MAX_MESSAGES);
+    }
 }
 
 /// How file diffs are shown (shared by every tab; a GPUI global while the app runs).
@@ -193,6 +219,21 @@ pub fn now() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recent_messages_move_to_front() {
+        let mut m = RecentMessages::default();
+        m.push("one");
+        m.push("  ");
+        m.push("two\n");
+        m.push("one");
+        assert_eq!(m.0, ["one", "two"]);
+        for i in 0..30 {
+            m.push(&i.to_string());
+        }
+        assert_eq!(m.0.len(), MAX_MESSAGES);
+        assert_eq!(m.0[0], "29");
+    }
 
     #[test]
     fn round_trips_and_tolerates_bad_files() {

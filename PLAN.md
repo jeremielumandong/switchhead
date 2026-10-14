@@ -114,16 +114,45 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 
 ## M3 — Local changes (Fork parity)
 
-- [ ] M3-1 Local Changes view: unstaged / staged lists, stage / unstage file, all, selected.
-- [ ] M3-2 Hunk and line staging, unstaging and discarding from the diff view.
-- [ ] M3-3 Commit box: subject/body, amend (loads previous message), sign-off, skip hooks,
+- [x] M3-1 Local Changes view: unstaged / staged lists, stage / unstage file, all, selected.
+  *`changes_view.rs` (sidebar "Local Changes" / "All Commits"): two virtualized lists with
+  click, Ctrl/Cmd-click, Shift-click, arrows, Space/Enter, double-click, Stage/Unstage
+  selected and all; the focused file's `git diff` (or new file's content). Status re-reads
+  on open, Refresh, index changes and window focus. The diff body moved to `diff_view.rs`,
+  shared with the commit pane. Local diffs have no syntax colors yet (Follow-ups).*
+- [x] M3-2 Hunk and line staging, unstaging and discarding from the diff view.
+  *Hunk headers carry Stage Hunk / Discard (unstaged) or Unstage Hunk (staged); changed
+  lines are picked with click, Shift-click and Ctrl/Cmd-click (both layouts) and staged
+  from the toolbar. `stage::apply_lines` applies the exact `git diff` shown; discarding
+  asks first in a gpui-kit alert dialog. New and deleted files stage whole only (M1-9).*
+- [x] M3-3 Commit box: subject/body, amend (loads previous message), sign-off, skip hooks,
       commit message templates, recent messages, spell check, char counters.
-- [ ] M3-4 Discard changes, delete untracked, ignore file/pattern (`.gitignore`), assume
+  *`commit_box.rs` under the staged list: subject and description, Amend (loads the last
+  message, restores the draft when turned off), Sign-off, Skip hooks, `commit.template`
+  (`Repo::commit_template`) in empty fields, the last 20 messages in a Recent menu
+  (state.json), and a subject counter (amber past 50, red past 72). Ctrl/Cmd+Enter
+  commits; Ctrl/Cmd+Shift+Enter or "Commit…" jumps to it. Hook output shows in full.
+  Spell check is deferred: no approved crate (Follow-ups).*
+- [x] M3-4 Discard changes, delete untracked, ignore file/pattern (`.gitignore`), assume
       unchanged / skip worktree.
-- [ ] M3-5 Image diff (side by side, swipe, onion skin) and binary file info.
-- [ ] M3-6 Merge conflict helper: list conflicted files, choose ours/theirs, built-in 3-way
+  *Right-click menu on the file lists (`changes_view/menu.rs`; right-click selects the row
+  first): Stage / Unstage, Discard Changes or Delete (asks; Delete or Ctrl/Cmd+Backspace
+  too), Ignore (the file, `*.ext`, each parent folder; untracked files), Assume Unchanged,
+  Skip Worktree and Copy Path. Hidden files come from the index in process
+  (`status::hidden`) and are listed under "N hidden" in the Unstaged header to show again.*
+- [x] M3-5 Image diff (side by side, swipe, onion skin) and binary file info.
+  *`image_diff.rs`: binary PNG / JPEG / GIF / WebP / BMP / TIFF / ICO files show both
+  versions with pixel size (read from the header) and file size; Swipe and Onion skin
+  follow the pointer. Other binaries show their kind (magic bytes) and size change. Local
+  binaries read HEAD / index blobs in process (`diff::read_at`). SVG stays a text diff.*
+- [x] M3-6 Merge conflict helper: list conflicted files, choose ours/theirs, built-in 3-way
       merge editor (base/ours/theirs/result), open external merge tool, mark resolved,
       continue / abort banner for merge, rebase, cherry-pick, revert.
+  *`merge_view.rs`: a conflicted file opens an editable result with one card per conflict
+  (ours / base / theirs, pick either, both, or base), All Ours / All Theirs, Open in
+  `merge.tool`, Mark Resolved (asks if markers remain). Binary and delete conflicts offer
+  whole-file choices (Keep / Delete). The repo banner shows the operation, conflict count,
+  Abort (confirmed), Skip and Continue. CRLF files and a MERGE_MSG prefill: Follow-ups.*
 - [ ] M3-7 Diff minimap: a narrow strip beside the diff marking added / removed / changed
       lines over the whole file; click or drag to jump. Commit and local-changes diffs.
 - [ ] M3-8 Git identity profiles: saved name / email / signing key sets, one picked per repo
@@ -131,11 +160,22 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 
 ## M4 — Branches, remotes, history (Fork parity)
 
-- [ ] M4-1 Sidebar: branches (tree by `/`), remotes, tags, stashes, submodules, worktrees;
+- [x] M4-1 Sidebar: branches (tree by `/`), remotes, tags, stashes, submodules, worktrees;
       filter box; ahead/behind badges; checkout by double-click.
-- [ ] M4-2 Branch ops: create (from any commit), rename, delete (local/remote), checkout
+  *`repo_view/sidebar.rs` + `sidebar_model.rs` (tree and filter, tested): branches and each
+  remote's branches fold by `/`; the filter keeps matching refs with their folders open.
+  Double-click checks out a branch, a remote branch (tracking branch if new) or a tag
+  (asks: detached), and opens a submodule or linked worktree in a tab
+  (`worktrees.rs`, via `git`). "Show only this ref" moved from double-click to Alt-click.*
+- [x] M4-2 Branch ops: create (from any commit), rename, delete (local/remote), checkout
       (with tracking), set upstream, merge into current (ff / no-ff / squash), rebase current
       onto, compare branches, push/delete remote branch.
+  *`repo_view/branch_ops.rs`: the sidebar's right-click menu on branches, remote branches
+  and tags (check out, merge ▸ modes, rebase, new branch, rename, delete with force and
+  upstream options, push, set upstream, compare, show only, copy name), and the toolbar's
+  Branch button / Ctrl+Shift+B at the selected commit. Names are checked like
+  `check-ref-format --branch`. Compare walks `left...right` (`Scope::Compare`, ends at the
+  merge bases); it does not yet mark which side a commit is on (Follow-ups).*
 - [ ] M4-3 Fetch (all remotes, prune), Pull (merge / rebase, autostash), Push (force-with-lease,
       tags, set upstream) with progress, cancel and errors in the activity panel.
 - [ ] M4-4 Commit context menu: checkout, create branch/tag here, cherry-pick, revert, reset
@@ -196,6 +236,12 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 
 ## Follow-ups
 
+- Branch compare: mark each commit's side (left / right) in the graph, like
+  `git log --left-right`.
+
+- Merge helper: keep CRLF line endings when writing the result; prefill the commit box
+  from `MERGE_MSG` during a merge.
+
 - Log without a commit-graph file: gix's topo walk computes in-degrees over the whole
   history before the first commit (1.9 s on git/git). Offer to run `git commit-graph write
   --reachable` in the background on open, or start with a time-ordered walk and re-sort.
@@ -217,3 +263,16 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   whitespace-only word ranges when whitespace is ignored.
 - Merge commits: offer a diff against each parent (and the combined diff), not only the
   first parent.
+- Local Changes diffs have no syntax colors or word highlights: read the index blob and
+  the work-tree file to highlight them, and pair runs as for commit diffs.
+- Local Changes ignores the whitespace setting (`git diff` without `-b` / `-w`); offer it
+  for viewing while keeping hunk staging on the real lines.
+- Fork shows an "Uncommitted changes" row at the top of the graph; add one that opens
+  Local Changes.
+- Work-tree edits made while switchhead is in front show only on Refresh or the next
+  focus change; a watcher (`notify`, pending approval) would catch them live.
+- Spell check in the commit box (M3-3): needs a dictionary crate (e.g. `spellbook`, MIT,
+  Hunspell dictionaries) and a squiggle decoration on the input; ask before adding it.
+- Image diffs: hide the text-diff settings (context, inline / side by side) in the
+  toolbar, show small images at 1:1 instead of scaled up, and a checkerboard behind
+  transparent pixels.

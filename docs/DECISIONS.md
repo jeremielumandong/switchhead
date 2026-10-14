@@ -95,3 +95,21 @@ rendering and Linux patches, plus `compat/*` facades that publish it as `gpui-pr
 local copies, so the graph has one GPUI core. All of it is Apache-2.0. Switchyard stays on
 0.7.1 with upstream GPUI Fast for now, so modules ported from it may need small API fixes.
 The copy is kept byte-identical to AgentOpsChat's; changes to the stack land there first.
+
+## 2026-10-14 — When Local Changes re-reads status
+
+Without an approved file watcher (`notify` is pending Jeremie's answer), status is re-read
+when the repo tab loads or is refreshed, after every stage / unstage, when the index
+fingerprint from `git::watch` changes (staging from a terminal), and when the window comes
+back to the front (files edited in another app). Work-tree edits made while switchhead stays
+in front show on Refresh. `git status` is not polled: on a large tree it costs far more
+than the `.git` metadata check.
+
+## 2026-10-14 — Commit box: recent messages and the template
+
+Recent commit messages are kept once for the whole app (20, newest first, in state.json),
+not per repository, so a message reused across a monorepo split is still there; they are
+stored as git keeps them (`--cleanup=strip`). The repository's `commit.template` fills the
+box when it is empty, and an untouched template does not count as a message. Commit runs
+`git commit -F -` with the message on stdin, so hooks and signing are
+git's own. Spell check needs a crate outside the approved list and is a follow-up.

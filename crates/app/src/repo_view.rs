@@ -16,10 +16,10 @@ use gpui_kit::AppContext as _;
 use gpui_kit::component::resizable::{ResizableState, resizable_panel, v_resizable};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, ClickEvent, Context, Entity, FocusHandle, Focusable, FontWeight, Hsla,
+    AnyElement, App, Context, Entity, FocusHandle, Focusable, FontWeight, Hsla,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, ScrollStrategy, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, Task, UniformListScrollHandle,
-    Window, canvas, div, px, svg, uniform_list,
+    Window, canvas, div, px, uniform_list,
 };
 use switchhead_git::cli::Cancel;
 use switchhead_git::graph::{GraphRows, Node, Segment};
@@ -31,10 +31,16 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use crate::actions;
 use crate::appearance::{rpx, ts};
+use crate::changes_view::{ChangesEvent, ChangesView};
 use crate::commit_view::{CommitView, Navigate};
 use crate::graph_paint;
 use crate::theme::{MONO, Palette, palette};
 use crate::ui;
+
+mod branch_ops;
+mod sidebar;
+
+use sidebar::{Section, SideRow};
 
 /// Graph row height at 100 % zoom.
 const ROW_H: f32 = 24.0;
@@ -53,6 +59,15 @@ enum Msg {
     Tracking(Box<Refs>),
 }
 
+/// Something the workspace acts on.
+#[derive(Clone, Debug)]
+pub enum RepoViewEvent {
+    /// Open this folder (a submodule or worktree) in a tab.
+    Open(std::path::PathBuf),
+}
+
+impl gpui_kit::EventEmitter<RepoViewEvent> for RepoView {}
+
 /// A git operation started from the toolbar.
 #[derive(Clone, Debug)]
 pub enum OpStatus {
@@ -69,55 +84,13 @@ pub enum OpStatus {
     Failed(SharedString),
 }
 
-/// A sidebar section.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Section {
-    /// Local branches.
-    Branches,
-    /// Remote-tracking branches.
-    Remotes,
-    /// Tags.
-    Tags,
-    /// Stashes.
-    Stashes,
-}
-
-impl Section {
-    fn title(self) -> &'static str {
-        match self {
-            Section::Branches => "Branches",
-            Section::Remotes => "Remotes",
-            Section::Tags => "Tags",
-            Section::Stashes => "Stashes",
-        }
-    }
-
-    fn icon(self) -> &'static str {
-        match self {
-            Section::Branches => "icons/sh-git-branch.svg",
-            Section::Remotes => "icons/sh-cloud.svg",
-            Section::Tags => "icons/sh-tag.svg",
-            Section::Stashes => "icons/sh-archive.svg",
-        }
-    }
-}
-
-/// One line of the sidebar (flattened, so the list can be virtualized).
-#[derive(Clone, Debug)]
-enum SideRow {
-    Header(Section, usize),
-    /// A ref: label, the commit, a detail on the right (ahead/behind), current branch,
-    /// and the revision to filter the graph by.
-    Ref {
-        text: SharedString,
-        id: Oid,
-        detail: Option<SharedString>,
-        current: bool,
-        rev: String,
-        indent: bool,
-    },
-    /// A remote's name above its branches.
-    Group(SharedString),
+/// What the main area shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    /// The commit graph and the selected commit's details.
+    Commits,
+    /// Local Changes: unstaged and staged files.
+    Changes,
 }
 
 /// A repository tab.
@@ -150,17 +123,27 @@ pub struct RepoView {
     focus: FocusHandle,
     cancel: Cancel,
     collapsed: HashSet<Section>,
+    /// Collapsed branch folders (`b/feature`, `r/origin/...`).
+    collapsed_folders: HashSet<String>,
+    side_filter: Option<(Entity<gpui_kit::component::input::InputState>, Subscription)>,
+    side_filter_text: String,
     side_rows: Vec<SideRow>,
+    /// The sidebar row a right click landed on (for its context menu).
+    menu_row: Option<usize>,
     details: Entity<CommitView>,
     details_split: Entity<ResizableState>,
     /// The commit the details pane shows.
     shown: Option<Oid>,
+    /// Graph or Local Changes.
+    pub mode: Mode,
+    changes: Entity<ChangesView>,
     /// The `.git` fingerprint the view last matched (see [`RepoView::check_changes`]).
     watched: Option<Fingerprint>,
     checking: bool,
     _walk: Option<Task<()>>,
     _watch: Task<()>,
     _details: Subscription,
+    _changes: [Subscription; 2],
     _op: Option<Task<()>>,
 }
 
@@ -175,6 +158,14 @@ impl RepoView {
             }
             cx.notify();
         });
+        let changes = cx.new(|cx| ChangesView::new(repo.clone(), cx));
+        let changes_sub = [
+            cx.observe(&changes, |_, _, cx| cx.notify()),
+            // A commit moved a branch: read refs now rather than at the next poll.
+            cx.subscribe(&changes, |this, _, ev: &ChangesEvent, cx| match ev {
+                ChangesEvent::Committed => this.check_changes(cx),
+            }),
+        ];
         let mut v = Self {
             state: repo.state(),
             repo,
@@ -195,10 +186,17 @@ impl RepoView {
             focus: cx.focus_handle(),
             cancel: Cancel::default(),
             collapsed: HashSet::from([Section::Tags]),
+            collapsed_folders: HashSet::new(),
+            side_filter: None,
+            side_filter_text: String::new(),
             side_rows: Vec::new(),
+            menu_row: None,
             details,
             details_split: cx.new(|_| ResizableState::default()),
             shown: None,
+            mode: Mode::Commits,
+            changes,
+            _changes: changes_sub,
             watched: None,
             checking: false,
             _watch: Self::watch(cx),
@@ -232,26 +230,51 @@ impl RepoView {
         let repo = self.repo.clone();
         let task = cx
             .background_executor()
-            .spawn(async move { watch::fingerprint(&repo) });
+            .spawn(async move { (watch::fingerprint(&repo), repo.state()) });
         cx.spawn(async move |this, cx| {
-            let fp = task.await;
+            let (fp, state) = task.await;
             let _ = this.update(cx, |v, cx| {
                 v.checking = false;
+                if v.state != state {
+                    v.state = state;
+                    cx.notify();
+                }
                 // While a walk or an operation runs, its own reload covers the change;
                 // keep the old fingerprint so a change it missed is caught next time.
                 if v.loading || matches!(v.op, Some(OpStatus::Running { .. })) {
                     return;
                 }
-                let changed = v.watched.is_some_and(|w| w.refs != fp.refs);
-                v.watched = Some(fp);
-                if changed {
+                let old = v.watched.replace(fp);
+                if old.is_some_and(|w| w.refs != fp.refs) {
                     tracing::debug!(repo = v.repo.name(), "refs changed outside the app");
                     v.reload(cx);
                     cx.notify();
+                } else if old.is_some_and(|w| w.index != fp.index) {
+                    v.changes.update(cx, |c, cx| c.refresh(cx));
                 }
             });
         })
         .detach();
+    }
+
+    /// The window came back to the front: re-read refs if they changed and status
+    /// always (files may have been edited elsewhere; status does not touch `.git`).
+    pub fn activated(&mut self, cx: &mut Context<Self>) {
+        self.check_changes(cx);
+        self.changes.update(cx, |c, cx| c.refresh(cx));
+    }
+
+    /// Show the graph or Local Changes, and focus it.
+    pub fn set_mode(&mut self, mode: Mode, window: &mut Window, cx: &mut Context<Self>) {
+        self.mode = mode;
+        match mode {
+            Mode::Commits => window.focus(&self.focus, cx),
+            Mode::Changes => {
+                let f = self.changes.focus_handle(cx);
+                window.focus(&f, cx);
+            }
+        }
+        cx.notify();
     }
 
     /// The tab's title.
@@ -282,6 +305,7 @@ impl RepoView {
         self.loading = true;
         self.error = None;
         self.state = self.repo.state();
+        self.changes.update(cx, |c, cx| c.refresh(cx));
         let (tx, mut rx) = unbounded_channel();
         let repo = self.repo.clone();
         let opts = LogOptions {
@@ -554,266 +578,6 @@ impl RepoView {
         }));
     }
 
-    // ---------------------------------------------------------------- sidebar
-
-    fn rebuild_side(&mut self) {
-        let mut rows = Vec::new();
-        let r = &self.refs;
-        let sections = [
-            (Section::Branches, r.branches.len()),
-            (
-                Section::Remotes,
-                r.remotes.iter().filter(|b| !b.is_symbolic_head).count(),
-            ),
-            (Section::Tags, r.tags.len()),
-            (Section::Stashes, r.stashes.len()),
-        ];
-        for (section, count) in sections {
-            rows.push(SideRow::Header(section, count));
-            if self.collapsed.contains(&section) {
-                continue;
-            }
-            match section {
-                Section::Branches => {
-                    for b in &r.branches {
-                        let detail = b.tracking.as_ref().and_then(|t| {
-                            if t.gone {
-                                Some("gone".into())
-                            } else if t.ahead + t.behind > 0 {
-                                Some(ahead_behind(t.ahead, t.behind).into())
-                            } else {
-                                None
-                            }
-                        });
-                        rows.push(SideRow::Ref {
-                            text: b.name.clone().into(),
-                            id: b.id,
-                            detail,
-                            current: b.is_head,
-                            rev: format!("refs/heads/{}", b.name),
-                            indent: false,
-                        });
-                    }
-                }
-                Section::Remotes => {
-                    let mut last: Option<&str> = None;
-                    for b in r.remotes.iter().filter(|b| !b.is_symbolic_head) {
-                        if last != Some(b.remote.as_str()) {
-                            rows.push(SideRow::Group(b.remote.clone().into()));
-                            last = Some(b.remote.as_str());
-                        }
-                        rows.push(SideRow::Ref {
-                            text: b.name.clone().into(),
-                            id: b.id,
-                            detail: None,
-                            current: false,
-                            rev: format!("refs/remotes/{}", b.short()),
-                            indent: true,
-                        });
-                    }
-                }
-                Section::Tags => {
-                    for t in &r.tags {
-                        rows.push(SideRow::Ref {
-                            text: t.name.clone().into(),
-                            id: t.id,
-                            detail: None,
-                            current: false,
-                            rev: format!("refs/tags/{}", t.name),
-                            indent: false,
-                        });
-                    }
-                }
-                Section::Stashes => {
-                    for s in &r.stashes {
-                        rows.push(SideRow::Ref {
-                            text: s.message.clone().into(),
-                            id: s.id,
-                            detail: Some(format!("@{{{}}}", s.index).into()),
-                            current: false,
-                            rev: s.id.to_string(),
-                            indent: false,
-                        });
-                    }
-                }
-            }
-        }
-        self.side_rows = rows;
-    }
-
-    fn toggle_section(&mut self, s: Section, cx: &mut Context<Self>) {
-        if !self.collapsed.remove(&s) {
-            self.collapsed.insert(s);
-        }
-        self.rebuild_side();
-        cx.notify();
-    }
-
-    fn render_sidebar(&self, p: &Palette, cx: &mut Context<Self>) -> AnyElement {
-        let count = self.side_rows.len();
-        let list = uniform_list(
-            "refs",
-            count,
-            cx.processor(move |this, range: Range<usize>, _w, cx| {
-                let p = palette(cx);
-                range
-                    .filter_map(|i| this.side_rows.get(i).cloned().map(|r| (i, r)))
-                    .map(|(i, row)| this.render_side_row(i, row, &p, cx))
-                    .collect::<Vec<_>>()
-            }),
-        )
-        .track_scroll(&self.side_scroll)
-        .flex_1()
-        .min_h_0()
-        .py(rpx(4.));
-        div()
-            .w(rpx(240.))
-            .flex_none()
-            .flex()
-            .flex_col()
-            .bg(p.panel)
-            .border_r_1()
-            .border_color(p.bd)
-            .child(
-                div()
-                    .h(rpx(32.))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .px(rpx(12.))
-                    .gap(rpx(8.))
-                    .border_b_1()
-                    .border_color(p.bd)
-                    .child(
-                        div()
-                            .flex_1()
-                            .truncate()
-                            .text_size(ts::UI)
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(self.title()),
-                    )
-                    .when(self.state != RepoState::Clean, |d| {
-                        d.child(ui::chip(self.state.label(), p.modified))
-                    }),
-            )
-            .child(list)
-            .into_any_element()
-    }
-
-    fn render_side_row(
-        &self,
-        i: usize,
-        row: SideRow,
-        p: &Palette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let base = div()
-            .id(("side", i))
-            .w_full()
-            .h(rpx(24.))
-            .flex()
-            .items_center()
-            .gap(rpx(6.))
-            .px(rpx(10.))
-            .text_size(ts::BODY);
-        match row {
-            SideRow::Header(section, n) => {
-                let open = !self.collapsed.contains(&section);
-                base.mt(rpx(if i == 0 { 0. } else { 6. }))
-                    .cursor_pointer()
-                    .text_color(p.fg2)
-                    .hover(|s| s.text_color(p.fg))
-                    .on_click(cx.listener(move |this, _, _, cx| this.toggle_section(section, cx)))
-                    .child(
-                        div()
-                            .w(rpx(10.))
-                            .text_size(ts::CAPTION)
-                            .text_color(p.fg3)
-                            .child(if open { "▾" } else { "▸" }),
-                    )
-                    .child(svg().path(section.icon()).size(rpx(13.)).text_color(p.fg3))
-                    .child(
-                        div()
-                            .flex_1()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_size(ts::LABEL)
-                            .child(section.title()),
-                    )
-                    .child(
-                        div()
-                            .font_family(MONO)
-                            .text_size(ts::CAPTION)
-                            .text_color(p.fg3)
-                            .child(n.to_string()),
-                    )
-                    .into_any_element()
-            }
-            SideRow::Group(name) => base
-                .pl(rpx(28.))
-                .text_color(p.fg3)
-                .text_size(ts::SMALL)
-                .child(name)
-                .into_any_element(),
-            SideRow::Ref {
-                text,
-                id,
-                detail,
-                current,
-                rev,
-                indent,
-            } => {
-                let filtered = self.scope == Scope::Revs(vec![rev.clone()]);
-                let selected = self.selected.is_some_and(|s| self.log.id(s) == id);
-                base.pl(rpx(if indent { 40. } else { 28. }))
-                    .cursor_pointer()
-                    .rounded(px(4.))
-                    .text_color(if current { p.fg } else { p.fg2 })
-                    .when(current, |d| d.font_weight(FontWeight::SEMIBOLD))
-                    .when(selected, |d| d.bg(p.sel))
-                    .hover(|s| s.bg(p.hover))
-                    .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| {
-                        if ev.click_count() >= 2 {
-                            // Double click: show only this ref's history (again: all).
-                            let scope = if this.scope == Scope::Revs(vec![rev.clone()]) {
-                                Scope::All
-                            } else {
-                                Scope::Revs(vec![rev.clone()])
-                            };
-                            this.pending_select = Some(id);
-                            this.set_scope(scope, cx);
-                        } else {
-                            match this.log.row_of(&id) {
-                                Some(row) => this.select(row, cx),
-                                None => this.pending_select = Some(id),
-                            }
-                            cx.notify();
-                        }
-                    }))
-                    .child(ui::dot(
-                        if current {
-                            p.acc
-                        } else {
-                            gpui_kit::transparent_black()
-                        },
-                        6.,
-                    ))
-                    .child(div().flex_1().min_w_0().truncate().child(text))
-                    .when(filtered, |d| d.child(ui::chip("only", p.acc)))
-                    .when_some(detail, |d, t| {
-                        d.child(
-                            div()
-                                .flex_none()
-                                .font_family(MONO)
-                                .text_size(ts::CAPTION)
-                                .text_color(p.fg3)
-                                .child(t),
-                        )
-                    })
-                    .into_any_element()
-            }
-        }
-    }
-
     // ---------------------------------------------------------------- graph
 
     fn render_graph_header(&self, p: &Palette, graph_w: f32, cx: &mut Context<Self>) -> AnyElement {
@@ -834,6 +598,7 @@ impl RepoView {
                 .collect::<Vec<_>>()
                 .join(", ")
                 .into(),
+            Scope::Compare(a, b) => format!("{} ⇄ {}", short_ref(a), short_ref(b)).into(),
         };
         let current_only = self.scope == Scope::Head;
         div()
@@ -860,7 +625,7 @@ impl RepoView {
                     "scope",
                     vec![
                         (
-                            if matches!(self.scope, Scope::Revs(_)) {
+                            if matches!(self.scope, Scope::Revs(_) | Scope::Compare(..)) {
                                 scope_label.clone()
                             } else {
                                 "All".into()
@@ -1111,6 +876,7 @@ impl Render for RepoView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
         let rem = window.rem_size();
+        self.ensure_side_filter(window, cx);
         div()
             .id("repo")
             .key_context("Graph")
@@ -1145,24 +911,200 @@ impl Render for RepoView {
             .on_action(
                 cx.listener(|this, _: &actions::CopyCommitId, _, cx| this.copy_commit_id(cx)),
             )
+            .on_action(
+                cx.listener(|this, _: &actions::ShowLocalChanges, window, cx| {
+                    this.set_mode(Mode::Changes, window, cx)
+                }),
+            )
+            .on_action(cx.listener(|this, _: &actions::ShowCommits, window, cx| {
+                this.set_mode(Mode::Commits, window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &actions::WriteCommitMessage, window, cx| {
+                    this.set_mode(Mode::Changes, window, cx);
+                    this.changes.update(cx, |c, cx| c.focus_commit(window, cx));
+                }),
+            )
+            .on_action(cx.listener(|this, _: &actions::NewBranch, window, cx| {
+                this.new_branch_at_selection(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::StageAll, _, cx| {
+                this.changes.update(cx, |c, cx| c.stage_all(cx))
+            }))
+            .on_action(cx.listener(|this, _: &actions::UnstageAll, _, cx| {
+                this.changes.update(cx, |c, cx| c.unstage_all(cx))
+            }))
             .when(self.sidebar, |d| d.child(self.render_sidebar(&p, cx)))
             .child(
-                div().flex_1().min_w_0().h_full().child(
-                    v_resizable("graph-details")
-                        .with_state(&self.details_split)
-                        .child(
-                            resizable_panel()
-                                .size_range(rem * (120. / 13.)..gpui_kit::Pixels::MAX)
-                                .child(self.render_graph(&p, cx)),
-                        )
-                        .child(
-                            resizable_panel()
-                                .size(rem * (400. / 13.))
-                                .size_range(rem * (140. / 13.)..gpui_kit::Pixels::MAX)
-                                .child(self.details.clone()),
-                        ),
-                ),
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .flex()
+                    .flex_col()
+                    .children(self.render_banner(&p, window, cx))
+                    .child(self.render_mode(&p, rem, cx)),
             )
+    }
+}
+
+impl RepoView {
+    fn render_mode(
+        &self,
+        p: &Palette,
+        rem: gpui_kit::Pixels,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .when(self.mode == Mode::Changes, |d| {
+                d.child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .h_full()
+                        .child(self.changes.clone()),
+                )
+            })
+            .when(self.mode == Mode::Commits, |d| {
+                d.child(
+                    div().flex_1().min_w_0().h_full().child(
+                        v_resizable("graph-details")
+                            .with_state(&self.details_split)
+                            .child(
+                                resizable_panel()
+                                    .size_range(rem * (120. / 13.)..gpui_kit::Pixels::MAX)
+                                    .child(self.render_graph(p, cx)),
+                            )
+                            .child(
+                                resizable_panel()
+                                    .size(rem * (400. / 13.))
+                                    .size_range(rem * (140. / 13.)..gpui_kit::Pixels::MAX)
+                                    .child(self.details.clone()),
+                            ),
+                    ),
+                )
+            })
+            .into_any_element()
+    }
+
+    /// The bar shown while a merge, rebase, cherry-pick, revert or `am` is stopped:
+    /// conflicts left, Continue, Skip and Abort.
+    fn render_banner(
+        &self,
+        p: &Palette,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        self.state.command()?;
+        let conflicts = self.changes.read(cx).conflicts();
+        let running = matches!(self.op, Some(OpStatus::Running { .. }));
+        let can_skip = !matches!(self.state, RepoState::Merge);
+        let what = match conflicts {
+            0 => "No conflicts left: continue when ready".to_owned(),
+            1 => "1 conflicted file".to_owned(),
+            n => format!("{n} conflicted files"),
+        };
+        let label = self.state.label();
+        let button = |id: &'static str, text: &'static str, kind: ui::Kind, enabled: bool| {
+            ui::button(id, text, kind, p)
+                .h(rpx(22.))
+                .when(!enabled, |d| d.opacity(0.5))
+                .when(enabled, |d| d.cursor_pointer())
+        };
+        Some(
+            div()
+                .flex_none()
+                .h(rpx(36.))
+                .px(rpx(12.))
+                .flex()
+                .items_center()
+                .gap(rpx(8.))
+                .bg(p.modified.opacity(0.12))
+                .border_b_1()
+                .border_color(p.modified.opacity(0.4))
+                .child(ui::chip(label, p.modified))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(ts::BODY)
+                        .text_color(if conflicts > 0 { p.fg } else { p.added })
+                        .child(what),
+                )
+                .when(conflicts > 0 && self.mode == Mode::Commits, |d| {
+                    d.child(
+                        button("op-resolve", "Resolve Conflicts", ui::Kind::Secondary, true)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.set_mode(Mode::Changes, window, cx)
+                            })),
+                    )
+                })
+                .child(
+                    button("op-abort", "Abort…", ui::Kind::Secondary, !running).on_click(
+                        cx.listener(move |this, _, window, cx| this.confirm_abort(window, cx)),
+                    ),
+                )
+                .when(can_skip, |d| {
+                    d.child(
+                        button("op-skip", "Skip", ui::Kind::Secondary, !running).on_click(
+                            cx.listener(|this, _, _, cx| {
+                                this.run_op("Skipping", "Skipped", |r, _, _| r.skip_operation(), cx)
+                            }),
+                        ),
+                    )
+                })
+                .child(
+                    button(
+                        "op-continue",
+                        "Continue",
+                        ui::Kind::Primary,
+                        conflicts == 0 && !running,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if this.changes.read(cx).conflicts() == 0 {
+                            this.run_op(
+                                "Continuing",
+                                "Continued",
+                                |r, _, _| r.continue_operation(),
+                                cx,
+                            );
+                        }
+                    })),
+                )
+                .into_any_element(),
+        )
+    }
+
+    fn confirm_abort(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        use gpui_kit::component::WindowExt as _;
+        use gpui_kit::component::button::ButtonVariant;
+        if matches!(self.op, Some(OpStatus::Running { .. })) {
+            return;
+        }
+        let label = self.state.label().to_lowercase();
+        let this = cx.entity().downgrade();
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            let this = this.clone();
+            alert
+                .confirm()
+                .title(format!("Stop {label}?"))
+                .description(
+                    "The branch goes back to where it was before, and conflict resolutions \
+                     made so far are lost.",
+                )
+                .ok_text("Abort")
+                .ok_variant(ButtonVariant::Danger)
+                .on_ok(move |_, _, cx| {
+                    let _ = this.update(cx, |v, cx| {
+                        v.run_op("Aborting", "Aborted", |r, _, _| r.abort_operation(), cx)
+                    });
+                    true
+                })
+        });
     }
 }
 

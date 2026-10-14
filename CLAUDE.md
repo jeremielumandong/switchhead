@@ -128,6 +128,17 @@ headers of bundled assets):
   the user applies it (the app runs the command or writes the file) after reviewing it.
 - Never read, copy, store or proxy a coding CLI's credentials. Each CLI uses its own login.
 
+## Commits
+
+- Author every commit as the repository owner: `Jeremie Lumandong <jeremie.lumandong@outlook.com>`.
+  Before the first commit in a fresh clone run
+  `git config user.name "Jeremie Lumandong"` and
+  `git config user.email "jeremie.lumandong@outlook.com"` (the container's default identity
+  is Claude's). Jeremie is the only author: no `Co-Authored-By: Claude ...` or
+  `Claude-Session:` trailers in commit messages, and no "Generated with Claude Code" footer
+  or session link in PR descriptions (the attribution header comment at the top of a PR body
+  stays).
+
 ## Coding conventions
 
 - Edition 2024, stable toolchain.

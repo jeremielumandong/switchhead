@@ -20,10 +20,10 @@ use switchhead_git::discover::{self, Target};
 
 use crate::actions;
 use crate::appearance::{self, rpx, ts};
-use crate::commit_view::set_prefs;
+use crate::diff_view::set_prefs;
 use crate::manager::ManagerState;
 use crate::palette::{Chip, PaletteEvent, PaletteView, RepoItem, Sources};
-use crate::repo_view::{OpStatus, RepoView};
+use crate::repo_view::{OpStatus, RepoView, RepoViewEvent};
 use crate::store::{self, DiffPrefs, Paths, State};
 use crate::theme::{self, MONO, Palette, SANS, ThemeId, palette};
 use crate::ui;
@@ -52,9 +52,12 @@ pub struct Workspace {
     _save: Option<Task<()>>,
     _omarchy: Option<Task<()>>,
     _diff_prefs: gpui_kit::Subscription,
+    _messages: gpui_kit::Subscription,
     /// Quick Launch, while open.
     palette: Option<(Entity<PaletteView>, gpui_kit::Subscription)>,
     _activation: gpui_kit::Subscription,
+    /// Each repository tab's event subscription, by its entity.
+    repo_subs: Vec<(gpui_kit::EntityId, gpui_kit::Subscription)>,
 }
 
 impl Workspace {
@@ -101,12 +104,19 @@ impl Workspace {
                 this.save(cx);
             }
         });
+        let messages = cx.observe_global::<store::RecentMessages>(|this, cx| {
+            let m = cx.global::<store::RecentMessages>();
+            if this.state.messages != *m {
+                this.state.messages = m.clone();
+                this.save(cx);
+            }
+        });
         // Coming back to the window: pick up what changed in a terminal meanwhile.
         let activation = cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active()
                 && let Some(v) = this.active_repo()
             {
-                v.update(cx, |v, cx| v.check_changes(cx));
+                v.update(cx, |v, cx| v.activated(cx));
             }
         });
         let reopen = state.open_tabs.clone();
@@ -123,8 +133,10 @@ impl Workspace {
             _save: None,
             _omarchy: omarchy,
             _diff_prefs: diff_prefs,
+            _messages: messages,
             palette: None,
             _activation: activation,
+            repo_subs: Vec::new(),
         };
         for path in reopen {
             ws.open_path(path, false, cx);
@@ -180,6 +192,10 @@ impl Workspace {
             None => {
                 let name = repo.name().to_owned();
                 let view = cx.new(|cx| RepoView::new(repo, cx));
+                let sub = cx.subscribe(&view, |ws, _, ev: &RepoViewEvent, cx| match ev {
+                    RepoViewEvent::Open(path) => ws.open_path(path.clone(), true, cx),
+                });
+                self.repo_subs.push((view.entity_id(), sub));
                 self.tabs.push(Tab::Repo(view));
                 self.state.touch(&root, &name, store::now());
                 self.tabs.len() - 1
@@ -205,7 +221,10 @@ impl Workspace {
         if ix == 0 || ix >= self.tabs.len() {
             return;
         }
-        self.tabs.remove(ix);
+        if let Tab::Repo(v) = self.tabs.remove(ix) {
+            let id = v.entity_id();
+            self.repo_subs.retain(|(e, _)| *e != id);
+        }
         if self.active >= ix {
             self.active = self
                 .active
@@ -346,7 +365,7 @@ impl Workspace {
 
     // ---------------------------------------------------------------- toolbar
 
-    fn repo_op(&mut self, op: ToolbarOp, cx: &mut Context<Self>) {
+    fn repo_op(&mut self, op: ToolbarOp, window: &mut Window, cx: &mut Context<Self>) {
         let Some(view) = self.active_repo().cloned() else {
             return;
         };
@@ -381,6 +400,7 @@ impl Workspace {
                 |r, _, _| r.stash_apply(0, true),
                 cx,
             ),
+            ToolbarOp::Branch => v.new_branch_at_selection(window, cx),
             ToolbarOp::Refresh => v.reload(cx),
         });
     }
@@ -413,7 +433,9 @@ impl Workspace {
                 })
                 .tooltip(move |w, cx| Tooltip::new(tip).build(w, cx))
                 .when_some(op.filter(|_| enabled), |d, op| {
-                    d.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.repo_op(op, cx)))
+                    d.on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.repo_op(op, window, cx)
+                    }))
                 })
                 .child(svg().path(icon).size(rpx(17.)).text_color(if enabled {
                     p.fg2
@@ -477,8 +499,8 @@ impl Workspace {
                 "tool-branch",
                 "icons/sh-git-branch.svg",
                 "Branch",
-                "New branch (coming with branch operations)",
-                None,
+                "New branch at the selected commit",
+                Some(ToolbarOp::Branch),
                 cx,
             ))
             .child(div().flex_1())
@@ -1005,6 +1027,7 @@ enum ToolbarOp {
     Push,
     Stash,
     Pop,
+    Branch,
     Refresh,
 }
 
@@ -1066,26 +1089,24 @@ impl Render for Workspace {
             )
             .on_action(cx.listener(|this, _: &actions::NextTab, _, cx| this.cycle_tab(1, cx)))
             .on_action(cx.listener(|this, _: &actions::PreviousTab, _, cx| this.cycle_tab(-1, cx)))
-            .on_action(
-                cx.listener(|this, _: &actions::Refresh, _, cx| {
-                    this.repo_op(ToolbarOp::Refresh, cx)
-                }),
-            )
-            .on_action(
-                cx.listener(|this, _: &actions::Fetch, _, cx| this.repo_op(ToolbarOp::Fetch, cx)),
-            )
-            .on_action(
-                cx.listener(|this, _: &actions::Pull, _, cx| this.repo_op(ToolbarOp::Pull, cx)),
-            )
-            .on_action(
-                cx.listener(|this, _: &actions::Push, _, cx| this.repo_op(ToolbarOp::Push, cx)),
-            )
-            .on_action(
-                cx.listener(|this, _: &actions::Stash, _, cx| this.repo_op(ToolbarOp::Stash, cx)),
-            )
-            .on_action(
-                cx.listener(|this, _: &actions::PopStash, _, cx| this.repo_op(ToolbarOp::Pop, cx)),
-            )
+            .on_action(cx.listener(|this, _: &actions::Refresh, window, cx| {
+                this.repo_op(ToolbarOp::Refresh, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::Fetch, window, cx| {
+                this.repo_op(ToolbarOp::Fetch, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::Pull, window, cx| {
+                this.repo_op(ToolbarOp::Pull, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::Push, window, cx| {
+                this.repo_op(ToolbarOp::Push, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::Stash, window, cx| {
+                this.repo_op(ToolbarOp::Stash, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::PopStash, window, cx| {
+                this.repo_op(ToolbarOp::Pop, window, cx)
+            }))
             .on_action(cx.listener(|this, _: &actions::ToggleSidebar, _, cx| {
                 this.rail_click(RailItem::Branches, cx)
             }))

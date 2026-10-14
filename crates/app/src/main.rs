@@ -8,15 +8,22 @@ extern crate gpui_kit as gpui;
 mod actions;
 mod appearance;
 mod assets;
+mod changes_model;
+mod changes_view;
+mod commit_box;
 mod commit_view;
 mod diff_model;
+mod diff_view;
 mod file_list;
 mod graph_paint;
+mod image_diff;
 mod log_file;
 mod manager;
+mod merge_view;
 mod omarchy;
 mod palette;
 mod repo_view;
+mod sidebar_model;
 mod split;
 mod store;
 mod theme;
@@ -111,6 +118,8 @@ fn main() -> Result<()> {
             }
             appearance::set(look, cx);
             cx.set_global(state.diff);
+            cx.set_global(state.messages.clone());
+            cx.set_global(image_diff::ImageView::default());
             let theme_key = std::env::var("SWITCHHEAD_THEME")
                 .ok()
                 .or_else(|| state.theme.clone());

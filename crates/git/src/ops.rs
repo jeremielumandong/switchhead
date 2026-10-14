@@ -231,9 +231,57 @@ impl Repo {
             .to_owned())
     }
 
+    /// The commit message template (`commit.template`), if one is set and readable.
+    /// A relative path is relative to the work tree, as for `git commit`.
+    pub fn commit_template(&self) -> Result<Option<String>> {
+        let path = match self
+            .git()?
+            .text(&["config", "--path", "--get", "commit.template"])
+        {
+            Ok(p) => p.trim_end_matches(['\n', '\r']).to_owned(),
+            // Exit code 1: the key is not set.
+            Err(Error::Command { code: Some(1), .. }) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        if path.is_empty() {
+            return Ok(None);
+        }
+        match std::fs::read(self.root().join(path)) {
+            Ok(bytes) => Ok(Some(String::from_utf8_lossy(&bytes).into_owned())),
+            Err(e) => {
+                tracing::warn!(error = %e, "could not read the commit template");
+                Ok(None)
+            }
+        }
+    }
+
     /// Mark conflicted paths resolved (stage them).
     pub fn mark_resolved(&self, paths: &[&Path]) -> Result<()> {
         self.run_paths(vec![os("add")], paths)?;
+        Ok(())
+    }
+
+    /// Resolve conflicted paths by deleting them (`git rm`), e.g. a file deleted on one side.
+    pub fn resolve_by_deleting(&self, paths: &[&Path]) -> Result<()> {
+        self.run_paths(vec![os("rm"), os("-q")], paths)?;
+        Ok(())
+    }
+
+    /// The configured external merge tool (`merge.tool`), if any.
+    /// Read through `git` so a tool set after the repository was opened counts.
+    pub fn merge_tool(&self) -> Option<String> {
+        self.git()
+            .ok()?
+            .text(&["config", "--get", "merge.tool"])
+            .ok()
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty())
+    }
+
+    /// Run the configured merge tool on one conflicted path and wait for it to close
+    /// (`git mergetool --no-prompt`). git stages the file when the tool reports success.
+    pub fn run_merge_tool(&self, path: &Path) -> Result<()> {
+        self.run_paths(vec![os("mergetool"), os("--no-prompt")], &[path])?;
         Ok(())
     }
 
@@ -741,6 +789,21 @@ mod tests {
     }
 
     #[test]
+    fn reads_the_commit_template() {
+        let t = TestRepo::new();
+        let r = repo(&t);
+        assert_eq!(r.commit_template().unwrap(), None);
+        t.write(".gitmessage", "Subject\n\n# Why?\n");
+        t.git(&["config", "commit.template", ".gitmessage"]);
+        assert_eq!(
+            r.commit_template().unwrap().as_deref(),
+            Some("Subject\n\n# Why?\n")
+        );
+        t.git(&["config", "commit.template", "missing.txt"]);
+        assert_eq!(r.commit_template().unwrap(), None);
+    }
+
+    #[test]
     fn local_changes_round_trip() {
         let t = TestRepo::new();
         let r = repo(&t);
@@ -804,6 +867,27 @@ mod tests {
             },
         )
         .unwrap();
+    }
+
+    #[test]
+    fn resolves_a_delete_conflict_by_deleting() {
+        let t = TestRepo::new();
+        let r = repo(&t);
+        t.commit_file("f.txt", "base\n", "base");
+        r.create_branch("other", "HEAD", false).unwrap();
+        t.git(&["rm", "-q", "f.txt"]);
+        t.git(&["commit", "-q", "-m", "delete"]);
+        r.checkout("other").unwrap();
+        t.commit_file("f.txt", "changed\n", "change");
+        r.checkout("main").unwrap();
+        assert!(r.merge("other", MergeMode::Default).is_err());
+        assert_eq!(r.merge_tool(), None);
+        r.resolve_by_deleting(&[Path::new("f.txt")]).unwrap();
+        r.continue_operation().unwrap();
+        assert_eq!(r.state(), RepoState::Clean);
+        assert!(!t.join("f.txt").exists());
+        t.git(&["config", "merge.tool", "meld"]);
+        assert_eq!(r.merge_tool().as_deref(), Some("meld"));
     }
 
     #[test]

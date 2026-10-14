@@ -14,13 +14,14 @@ macro_rules! icons {
     };
 }
 
-const ICONS: [(&str, &[u8]); 14] = icons!(
+const ICONS: [(&str, &[u8]); 15] = icons!(
     "archive",
     "archive-restore",
     "arrow-down",
     "arrow-down-to-line",
     "arrow-up",
     "cloud",
+    "file-diff",
     "folder-git-2",
     "git-branch",
     "git-commit-horizontal",
