@@ -8,7 +8,8 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [x] M0-1 Cargo workspace on Switchyard's stack: `gpui-kit =0.7.1`, gpui-fast patch (rev
       `598306f`), Switchyard's `Cargo.lock` as the version seed, rustfmt/clippy configs, Geist
       fonts and Lucide license copied. *Pushed on `claude/scaffold`.*
-- [ ] M0-2 CI (`.github/workflows/ci.yml` from Switchyard: fmt, clippy, test on Linux/macOS/Windows).
+- [x] M0-2 CI (`.github/workflows/ci.yml` from Switchyard: fmt, clippy, test on Linux/macOS/Windows).
+      *fmt job plus clippy + tests on all three OSes; no integration jobs needed (tests use `git`).*
 - [ ] M0-3 README with screenshots, install, build instructions.
 
 ## M1 — Git engine (`crates/git`)
@@ -22,15 +23,25 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [ ] M1-4 `log`: streaming walk in date order (gix topo `DateOrder` + commit-graph) over all
       refs (or HEAD / chosen branches), batches into a columnar `CommitLog` (ids, parents,
       interned authors, times, summary arena, id→row map). Cancellable. Benchmark on a big
-      repo (git/git, linux) and log first-batch and full times.
+      repo (git/git, linux) and log first-batch and full times. *`log::walk` / `CommitLog`
+      (mailmap applied, authors interned, summaries in one arena), `examples/log_bench.rs`.
+      git/git (85,563 commits, `--all`): with a commit-graph file 94 ms to the first batch,
+      1.26 s in all (`git log --all --date-order` 2.4 s); without one 1.9 s / 3.2 s, see
+      Follow-ups. linux not measured yet.*
 - [ ] M1-5 `graph`: incremental lane layout (lanes hold the next expected commit; merges join,
       branches fork; colors follow first-parent lines); rows as top/bottom segments in one
       arena. Tests on linear, branch/merge, octopus, criss-cross, and out-of-order histories.
+      *`graph::Layout` / `GraphRows`; each `log::Batch` carries its rows. Tests check that
+      every row's bottom edge meets the next row's top edge. git/git's widest row is 282
+      lanes (git's own graph ~190), see Follow-ups.*
 - [ ] M1-6 `refs`: local branches (upstream, ahead/behind via `for-each-ref --format
       %(upstream:track)`), remotes, tags (annotated peeled), stashes (reflog), HEAD;
-      decorations map id → labels for the graph.
+      decorations map id → labels for the graph. *`refs::load` (gix, tags peeled, stash
+      reflog) and `refs::load_tracking` (one `for-each-ref`, can arrive later);
+      `Refs::decorations`.*
 - [ ] M1-7 `status`: `git status --porcelain=v2 -z --branch` parser (ordinary, renamed,
       unmerged, untracked, ignored), staged vs unstaged lists, branch header.
+      *`status::status` / `parse`; paths are `PathBuf` (not always UTF-8).*
 - [ ] M1-8 `diff`: commit file list (gix tree diff, renames), per-file blob diff (imara
       histogram + word diff), unified-diff parser for `git diff` / `git diff --cached`;
       binary and large-file detection; image file detection for image diff.
@@ -136,4 +147,9 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 
 ## Follow-ups
 
-- (none yet)
+- Log without a commit-graph file: gix's topo walk computes in-degrees over the whole
+  history before the first commit (1.9 s on git/git). Offer to run `git commit-graph write
+  --reachable` in the background on open, or start with a time-ordered walk and re-sort.
+- Graph width: lanes keep their slot, so busy histories get wider than git's own graph.
+  Compact lanes (shift right lanes left with diagonal segments) if wide graphs look bad.
+- README (M0-3) waits for the app shell (M2) for screenshots.
