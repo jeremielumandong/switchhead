@@ -30,6 +30,7 @@ use switchhead_git::{Oid, Repo, RepoState};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use crate::actions;
+use crate::activity::{Activity, Outcome};
 use crate::appearance::{rpx, ts};
 use crate::changes_view::{ChangesEvent, ChangesView};
 use crate::commit_view::{CommitView, Navigate};
@@ -37,7 +38,10 @@ use crate::graph_paint;
 use crate::theme::{MONO, Palette, palette};
 use crate::ui;
 
+mod activity_panel;
 mod branch_ops;
+mod form;
+mod remote_ops;
 mod sidebar;
 
 use sidebar::{Section, SideRow};
@@ -82,6 +86,8 @@ pub enum OpStatus {
     Done(SharedString),
     /// Failed with git's message.
     Failed(SharedString),
+    /// Stopped by the user.
+    Cancelled(SharedString),
 }
 
 /// What the main area shows.
@@ -130,6 +136,13 @@ pub struct RepoView {
     side_rows: Vec<SideRow>,
     /// The sidebar row a right click landed on (for its context menu).
     menu_row: Option<usize>,
+    /// Cancels the running operation.
+    op_cancel: Option<Cancel>,
+    activity: Activity,
+    /// The activity panel is open.
+    pub activity_open: bool,
+    /// Activity entries the user folded.
+    activity_collapsed: HashSet<u64>,
     details: Entity<CommitView>,
     details_split: Entity<ResizableState>,
     /// The commit the details pane shows.
@@ -191,6 +204,10 @@ impl RepoView {
             side_filter_text: String::new(),
             side_rows: Vec::new(),
             menu_row: None,
+            op_cancel: None,
+            activity: Activity::default(),
+            activity_open: false,
+            activity_collapsed: HashSet::new(),
             details,
             details_split: cx.new(|_| ResizableState::default()),
             shown: None,
@@ -523,10 +540,12 @@ impl RepoView {
             label: label.into(),
             progress: SharedString::default(),
         });
+        let entry = self.activity.start(label);
         cx.notify();
         let (tx, mut rx) = unbounded_channel::<Result<String, String>>();
         let repo = self.repo.clone();
         let cancel = Cancel::default();
+        self.op_cancel = Some(cancel.clone());
         let spawned = std::thread::Builder::new()
             .name("git-op".into())
             .spawn(move || {
@@ -542,7 +561,10 @@ impl RepoView {
                 });
             });
         if let Err(e) = spawned {
-            self.op = Some(OpStatus::Failed(format!("{label} failed: {e}").into()));
+            let msg = format!("{label} failed: {e}");
+            self.activity.finish(entry, Outcome::Failed, &msg);
+            self.op = Some(OpStatus::Failed(msg.into()));
+            self.op_cancel = None;
             return;
         }
         // Progress arrives as `Ok(line)`; the end as `Err(message)`, empty on success.
@@ -554,18 +576,26 @@ impl RepoView {
                         Ok(line) => {
                             let line = line.trim();
                             if !line.is_empty() {
+                                v.activity.line(entry, line);
                                 v.op = Some(OpStatus::Running {
                                     label: label.into(),
                                     progress: line.to_owned().into(),
                                 });
                             }
                         }
-                        Err(e) if e.is_empty() => {
-                            v.op = Some(OpStatus::Done(done.into()));
-                            v.reload(cx);
-                        }
                         Err(e) => {
-                            v.op = Some(OpStatus::Failed(first_line(&e).into()));
+                            let cancelled = v.op_cancel.take().is_some_and(|c| c.is_cancelled());
+                            if cancelled {
+                                v.activity.finish(entry, Outcome::Cancelled, "");
+                                v.op =
+                                    Some(OpStatus::Cancelled(format!("{label}: cancelled").into()));
+                            } else if e.is_empty() {
+                                v.activity.finish(entry, Outcome::Done, "");
+                                v.op = Some(OpStatus::Done(done.into()));
+                            } else {
+                                v.activity.finish(entry, Outcome::Failed, &e);
+                                v.op = Some(OpStatus::Failed(crate::activity::summary(&e).into()));
+                            }
                             v.reload(cx);
                         }
                     }
@@ -576,6 +606,18 @@ impl RepoView {
                 }
             }
         }));
+    }
+
+    /// Stop the running operation (git is killed; the repository is left as git leaves it).
+    pub fn cancel_op(&mut self) {
+        if let Some(c) = &self.op_cancel {
+            c.cancel();
+        }
+    }
+
+    /// The operation log.
+    pub fn activity(&self) -> &Activity {
+        &self.activity
     }
 
     // ---------------------------------------------------------------- graph
@@ -925,6 +967,9 @@ impl Render for RepoView {
                     this.changes.update(cx, |c, cx| c.focus_commit(window, cx));
                 }),
             )
+            .on_action(
+                cx.listener(|this, _: &actions::ToggleActivity, _, cx| this.toggle_activity(cx)),
+            )
             .on_action(cx.listener(|this, _: &actions::NewBranch, window, cx| {
                 this.new_branch_at_selection(window, cx)
             }))
@@ -943,7 +988,10 @@ impl Render for RepoView {
                     .flex()
                     .flex_col()
                     .children(self.render_banner(&p, window, cx))
-                    .child(self.render_mode(&p, rem, cx)),
+                    .child(self.render_mode(&p, rem, cx))
+                    .when(self.activity_open, |d| {
+                        d.child(self.render_activity(&p, cx))
+                    }),
             )
     }
 }
@@ -1157,14 +1205,6 @@ fn short_ref(r: &str) -> &str {
         .unwrap_or(r)
 }
 
-fn first_line(s: &str) -> String {
-    s.lines()
-        .map(str::trim)
-        .find(|l| !l.is_empty())
-        .unwrap_or("failed")
-        .to_owned()
-}
-
 /// A commit date for the list: "14:02" today, "Oct 9 14:02" this year, "Oct 9 2023" before.
 fn fmt_date(secs: i64, now: i64) -> SharedString {
     use chrono::{Datelike as _, Local, TimeZone as _};
@@ -1218,6 +1258,5 @@ mod tests {
         assert_eq!(ahead_behind(1, 1), "↑1 ↓1");
         assert_eq!(short_ref("refs/remotes/origin/main"), "origin/main");
         assert_eq!(short_ref("abc"), "abc");
-        assert_eq!(first_line("\n  fatal: no remote\nmore"), "fatal: no remote");
     }
 }

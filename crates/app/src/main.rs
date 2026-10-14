@@ -6,6 +6,7 @@
 extern crate gpui_kit as gpui;
 
 mod actions;
+mod activity;
 mod appearance;
 mod assets;
 mod changes_model;

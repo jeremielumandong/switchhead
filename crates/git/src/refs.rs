@@ -127,12 +127,21 @@ pub struct Refs {
     pub worktrees: Vec<crate::worktrees::Worktree>,
     /// Submodules; filled by [`load_tracking`].
     pub submodules: Vec<crate::worktrees::Submodule>,
+    /// Remotes in the config (`git remote`), including ones never fetched; filled by
+    /// [`load_tracking`].
+    pub configured_remotes: Vec<String>,
 }
 
 impl Refs {
-    /// Remote names, in order.
+    /// Remote names, sorted: the configured ones (once known) and any with branches.
     pub fn remote_names(&self) -> Vec<&str> {
-        let mut names: Vec<&str> = self.remotes.iter().map(|r| r.remote.as_str()).collect();
+        let mut names: Vec<&str> = self
+            .remotes
+            .iter()
+            .map(|r| r.remote.as_str())
+            .chain(self.configured_remotes.iter().map(String::as_str))
+            .collect();
+        names.sort_unstable();
         names.dedup();
         names
     }
@@ -274,6 +283,13 @@ pub fn load_tracking(repo: &Repo, refs: &mut Refs) -> Result<()> {
         tracing::debug!(error = %e, "worktrees unavailable");
         Vec::new()
     });
+    refs.configured_remotes = match repo.git()?.text(&["remote"]) {
+        Ok(text) => text.lines().map(str::to_owned).collect(),
+        Err(e) => {
+            tracing::debug!(error = %e, "remotes unavailable");
+            Vec::new()
+        }
+    };
     refs.submodules = crate::worktrees::list_submodules(repo).unwrap_or_else(|e| {
         tracing::debug!(error = %e, "submodules unavailable");
         Vec::new()
@@ -384,7 +400,9 @@ mod tests {
             .collect();
         assert_eq!(stashes, [(0, true), (1, false)]);
 
+        t.git(&["remote", "add", "unfetched", "../nowhere"]);
         load_tracking(&repo, &mut refs).unwrap();
+        assert_eq!(refs.remote_names(), ["origin", "unfetched"]);
         let main = refs.current_branch().unwrap();
         assert_eq!(
             main.tracking,

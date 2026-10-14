@@ -199,6 +199,9 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
 - The repository here was cloned single-branch: add
   `+refs/heads/*:refs/remotes/origin/*` to `remote.origin.fetch` before tracking new branches.
 - git prints progress with `\r`; `cli::Git::run_streaming` splits on `\r` and `\n`.
+- `git fetch --all`, ssh and transport helpers are child processes that keep git's pipes
+  open after git is killed. `run_streaming` starts git in its own process group, kills the
+  group on cancel, and stops reading a pipe 500 ms after git exits.
 - Background `git` runs with `GIT_TERMINAL_PROMPT=0`, `LC_ALL=C`, `GIT_EDITOR=true`,
   `GIT_OPTIONAL_LOCKS=0` and `-c color.ui=false -c core.quotepath=false`.
 - GPUI: a `uniform_list` row sizes to its content, so rows with a `flex_1` column need

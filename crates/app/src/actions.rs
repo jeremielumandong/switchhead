@@ -50,6 +50,7 @@ actions!(
         WriteCommitMessage,
         DiscardSelected,
         NewBranch,
+        ToggleActivity,
     ]
 );
 
@@ -81,9 +82,9 @@ pub fn commands() -> Vec<Command> {
         }
     }
     vec![
-        c("Fetch", "Remote", Fetch, true),
-        c("Pull", "Remote", Pull, true),
-        c("Push", "Remote", Push, true),
+        c("Fetch…", "Remote", Fetch, true),
+        c("Pull…", "Remote", Pull, true),
+        c("Push…", "Remote", Push, true),
         c("Stash Changes", "Stash", Stash, true),
         c("Pop Stash", "Stash", PopStash, true),
         c("Refresh", "Repository", Refresh, true),
@@ -102,6 +103,7 @@ pub fn commands() -> Vec<Command> {
         c("Unstage All Changes", "Changes", UnstageAll, true),
         c("Commit…", "Changes", WriteCommitMessage, true),
         c("New Branch…", "Branches", NewBranch, true),
+        c("Show / Hide Activity", "Window", ToggleActivity, true),
         c(
             "Toggle Inline / Side-by-Side Diff",
             "Diff",
