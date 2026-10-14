@@ -46,6 +46,7 @@ mod form;
 mod rebase;
 mod remote_ops;
 mod sidebar;
+mod stash_ops;
 mod tag_ops;
 
 use sidebar::{Section, SideRow};

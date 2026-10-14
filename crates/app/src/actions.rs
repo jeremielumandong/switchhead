@@ -87,7 +87,7 @@ pub fn commands() -> Vec<Command> {
         c("Fetch…", "Remote", Fetch, true),
         c("Pull…", "Remote", Pull, true),
         c("Push…", "Remote", Push, true),
-        c("Stash Changes", "Stash", Stash, true),
+        c("Stash Changes…", "Stash", Stash, true),
         c("Pop Stash", "Stash", PopStash, true),
         c("Refresh", "Repository", Refresh, true),
         c("Jump to HEAD", "History", JumpToHead, true),

@@ -87,11 +87,16 @@ impl RepoView {
         let on_ok = Rc::new(on_ok);
         let form = Rc::new(form);
         window.open_alert_dialog(cx, move |alert, window, cx| {
-            if first.replace(false)
-                && let Some(input) = &input
-            {
-                let f = input.focus_handle(cx);
-                window.focus(&f, cx);
+            if first.replace(false) {
+                // The name field first, else the message.
+                let f = match (&input, &message) {
+                    (Some(i), _) => Some(i.focus_handle(cx)),
+                    (None, Some(m)) => Some(m.focus_handle(cx)),
+                    _ => None,
+                };
+                if let Some(f) = f {
+                    window.focus(&f, cx);
+                }
             }
             let p = palette(cx);
             let mut alert = alert

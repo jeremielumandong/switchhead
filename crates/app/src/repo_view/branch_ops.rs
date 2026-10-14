@@ -15,7 +15,7 @@ use super::form::Form;
 use super::sidebar::{SideRow, Target};
 
 impl RepoView {
-    fn branch_names(&self) -> Vec<String> {
+    pub(super) fn branch_names(&self) -> Vec<String> {
         self.refs.branches.iter().map(|b| b.name.clone()).collect()
     }
 
@@ -280,7 +280,7 @@ impl RepoView {
 }
 
 /// A menu item's action on the view.
-type ViewAction = dyn Fn(&mut RepoView, &mut Window, &mut Context<RepoView>);
+pub(super) type ViewAction = dyn Fn(&mut RepoView, &mut Window, &mut Context<RepoView>);
 
 /// `origin/feature/x` → (`origin`, `feature/x`).
 fn split_remote(short: &str) -> Option<(String, String)> {
@@ -315,7 +315,10 @@ pub(super) fn build_ref_menu(
             remotes,
         )
     };
-    let Some(SideRow::Ref { target, rev, .. }) = row else {
+    let Some(SideRow::Ref {
+        target, rev, id, ..
+    }) = row
+    else {
         return menu;
     };
     let act = |f: Box<ViewAction>| {
@@ -324,6 +327,9 @@ pub(super) fn build_ref_menu(
             let _ = view.update(cx, |v, cx| f(v, window, cx));
         }
     };
+    if let (Target::Stash(index), Some(id)) = (&target, id) {
+        return super::stash_ops::build_stash_menu(menu, *index, id, &act, view, cx);
+    }
     let (name, rev_for_ops) = match &target {
         Target::Branch(n) => (n.clone(), n.clone()),
         Target::Remote(s) => (s.clone(), s.clone()),

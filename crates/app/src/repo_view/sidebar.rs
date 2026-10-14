@@ -77,8 +77,8 @@ pub enum Target {
     Remote(String),
     /// Check out a tag (detached; asks first).
     Tag(String),
-    /// A stash: nothing (click selects it).
-    Stash,
+    /// Stash `stash@{n}`: a click shows it in the details pane.
+    Stash(usize),
     /// Open a folder (a worktree or submodule) in a tab.
     Open(PathBuf),
     /// Nothing (the current worktree, an uninitialized submodule).
@@ -305,7 +305,7 @@ impl RepoView {
                     detail: Some(format!("@{{{}}}", s.index).into()),
                     current: false,
                     rev: Some(s.id.to_string()),
-                    target: Target::Stash,
+                    target: Target::Stash(s.index),
                 })
                 .collect(),
             Section::Submodules => r
@@ -437,7 +437,7 @@ impl RepoView {
             }
             Target::Tag(name) => self.confirm_tag_checkout(name, window, cx),
             Target::Open(path) => cx.emit(RepoViewEvent::Open(path)),
-            Target::Stash | Target::None => {}
+            Target::Stash(_) | Target::None => {}
         }
     }
 
@@ -761,6 +761,13 @@ impl RepoView {
         }
         if ev.click_count() >= 2 {
             self.activate_target(target, window, cx);
+            return;
+        }
+        if let (Target::Stash(_), Some(id)) = (&target, id) {
+            if self.mode != Mode::Commits {
+                self.set_mode(Mode::Commits, window, cx);
+            }
+            self.show_stash(id, cx);
             return;
         }
         if let Some(id) = id {

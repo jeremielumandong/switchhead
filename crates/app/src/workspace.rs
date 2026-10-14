@@ -373,12 +373,7 @@ impl Workspace {
             ToolbarOp::Fetch => v.fetch_dialog(window, cx),
             ToolbarOp::Pull => v.pull_dialog(window, cx),
             ToolbarOp::Push => v.push_dialog(window, cx),
-            ToolbarOp::Stash => v.run_op(
-                "Stashing",
-                "Stashed local changes",
-                |r, _, _| r.stash_push(&Default::default()),
-                cx,
-            ),
+            ToolbarOp::Stash => v.stash_dialog(window, cx),
             ToolbarOp::Pop => v.run_op(
                 "Popping the stash",
                 "Applied and dropped stash@{0}",

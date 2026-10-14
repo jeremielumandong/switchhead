@@ -208,8 +208,13 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   and an optional message (annotated when given) and can push it; the sidebar's tag menu
   adds Push Tag and Delete… (optionally on the remote too); palette "Push All Tags";
   checkout was already there (asks, detached). The dialog form gained a message field.*
-- [ ] M4-7 Stashes: create (with untracked, staged only, keep index), apply, pop, drop,
+- [x] M4-7 Stashes: create (with untracked, staged only, keep index), apply, pop, drop,
       view diff, create branch from stash.
+  *`repo_view/stash_ops.rs`: Stash (toolbar, palette) opens a dialog with a message and
+  the three options; clicking a stash in the sidebar shows it in the details pane; its
+  menu has Apply, Pop, New Branch from Stash…, Drop… (asks) and Copy Message. Each
+  index-based command first checks `stash@{n}` is still the stash that was shown. The
+  untracked part of a stash is not listed yet (Follow-ups).*
 - [ ] M4-8 Remotes: add / edit / remove, fetch one, prune.
 - [ ] M4-9 Search: commits by message, author, id, file path; content search (`-S`/`-G`);
       results highlighted in the graph.
@@ -260,6 +265,8 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [ ] M7-3 Updates, crash logs, docs site.
 
 ## Follow-ups
+
+- Stash details: also list the untracked files a stash holds (its third parent).
 
 - Cherry-pick and revert of merge commits: ask which parent is the mainline (`-m`).
 
