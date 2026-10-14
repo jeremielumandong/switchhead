@@ -168,7 +168,7 @@ impl Workspace {
         .detach();
     }
 
-    fn prompt_init(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn prompt_init(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let chosen = cx.prompt_for_paths(PathPromptOptions {
             files: false,
             directories: true,

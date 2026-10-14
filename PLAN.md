@@ -101,7 +101,12 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
       rows, tree-sitter colors cut per line off the UI thread). Diff settings are shared by
       all tabs and saved. `commit::info` in the engine. Merges show the first-parent diff;
       image previews wait for M3-5.*
-- [ ] M2-6 Command palette (Quick Launch) with every command; keyboard shortcuts like Fork's.
+- [x] M2-6 Command palette (Quick Launch) with every command; keyboard shortcuts like Fork's.
+      *`palette.rs` (Ctrl/Cmd+P, ported from Switchyard): every command in
+      `actions::commands()` (dispatched as actions, shortcuts read from the keymap), open
+      tabs and recent repositories, the active repository's branches and tags (jump to the
+      commit). Chips or a leading `>` filter. New actions for the diff settings, branch
+      filter, Copy Commit ID (Ctrl/Cmd+Shift+C), Appearance (Ctrl/Cmd+,).*
 - [ ] M2-7 File system watcher: refresh status and refs when the work tree or `.git` changes.
 
 ## M3 — Local changes (Fork parity)

@@ -15,6 +15,7 @@ mod graph_paint;
 mod log_file;
 mod manager;
 mod omarchy;
+mod palette;
 mod repo_view;
 mod split;
 mod store;

@@ -364,6 +364,59 @@ impl RepoView {
         }
     }
 
+    /// Select commit `id`: at once when it is loaded, else when its batch arrives. A
+    /// commit outside a filtered view switches the graph to every branch first.
+    pub fn reveal(&mut self, id: Oid, cx: &mut Context<Self>) {
+        match self.log.row_of(&id) {
+            Some(row) => self.select(row, cx),
+            None => {
+                self.pending_select = Some(id);
+                if !self.loading && self.scope != Scope::All {
+                    self.set_scope(Scope::All, cx);
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// Branches, remote branches and tags, for Quick Launch.
+    pub fn palette_refs(&self) -> Vec<crate::palette::RefItem> {
+        use crate::palette::RefItem;
+        let r = &self.refs;
+        r.branches
+            .iter()
+            .map(|b| RefItem {
+                name: b.name.clone(),
+                kind: "Branch",
+                id: b.id,
+            })
+            .chain(
+                r.remotes
+                    .iter()
+                    .filter(|b| !b.is_symbolic_head)
+                    .map(|b| RefItem {
+                        name: b.short(),
+                        kind: "Remote branch",
+                        id: b.id,
+                    }),
+            )
+            .chain(r.tags.iter().map(|t| RefItem {
+                name: t.name.clone(),
+                kind: "Tag",
+                id: t.id,
+            }))
+            .collect()
+    }
+
+    /// Copy the selected commit's full id.
+    fn copy_commit_id(&mut self, cx: &mut Context<Self>) {
+        if let Some(i) = self.selected {
+            cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(
+                self.log.id(i).to_string(),
+            ));
+        }
+    }
+
     /// Show only `rev` (`None`: every branch) and reload.
     pub fn set_scope(&mut self, scope: Scope, cx: &mut Context<Self>) {
         if self.scope != scope {
@@ -1029,6 +1082,15 @@ impl Render for RepoView {
                 this.move_selection(isize::MAX / 2, cx)
             }))
             .on_action(cx.listener(|this, _: &actions::JumpToHead, _, cx| this.jump_to_head(cx)))
+            .on_action(cx.listener(|this, _: &actions::ShowAllBranches, _, cx| {
+                this.set_scope(Scope::All, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::ShowCurrentBranch, _, cx| {
+                this.set_scope(Scope::Head, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &actions::CopyCommitId, _, cx| this.copy_commit_id(cx)),
+            )
             .when(self.sidebar, |d| d.child(self.render_sidebar(&p, cx)))
             .child(
                 div().flex_1().min_w_0().h_full().child(

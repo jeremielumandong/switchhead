@@ -114,6 +114,17 @@ impl DiffPrefs {
     }
 }
 
+impl WhitespacePref {
+    /// The next mode (show → ignore amount → ignore all → show).
+    pub fn next(self) -> Self {
+        match self {
+            WhitespacePref::Show => WhitespacePref::IgnoreChanges,
+            WhitespacePref::IgnoreChanges => WhitespacePref::IgnoreAll,
+            WhitespacePref::IgnoreAll => WhitespacePref::Show,
+        }
+    }
+}
+
 /// Whitespace handling in diffs.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
