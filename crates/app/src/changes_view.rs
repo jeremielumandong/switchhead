@@ -7,8 +7,11 @@
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui_kit::AppContext as _;
+use gpui_kit::component::WindowExt as _;
+use gpui_kit::component::button::ButtonVariant;
 use gpui_kit::component::resizable::{ResizableState, h_resizable, resizable_panel};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -18,16 +21,26 @@ use gpui_kit::{
     Window, div, px, uniform_list,
 };
 use switchhead_git::Repo;
-use switchhead_git::diff;
+use switchhead_git::diff::{self, FilePatch, LineKind};
+use switchhead_git::stage;
 use switchhead_git::status::{self, Status, StatusOptions};
 
 use crate::actions;
 use crate::appearance::{rpx, ts};
-use crate::changes_model::{Badge, Lists, Selection, Side};
+use crate::changes_model::{Badge, LineSelection, Lists, Selection, Side};
 use crate::diff_view::{self, Content, Loaded, highlight_theme, theme_key};
 use crate::store::DiffPrefs;
-use crate::theme::{MONO, Palette, palette};
+use crate::theme::{MONO, Palette, SANS, palette};
 use crate::ui;
+
+/// What a hunk or line action applies to.
+#[derive(Clone, Copy, Debug)]
+enum Part {
+    /// One hunk (its index).
+    Hunk(usize),
+    /// The picked lines.
+    Lines,
+}
 
 /// What the focused file's diff was loaded for.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -61,6 +74,9 @@ pub struct ChangesView {
     split: Entity<ResizableState>,
     lists_split: Entity<ResizableState>,
     focus: FocusHandle,
+    /// The `git diff` the shown diff came from (for hunk and line staging).
+    patch: Option<Arc<FilePatch>>,
+    lines: LineSelection,
     _diff: Option<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -92,6 +108,8 @@ impl ChangesView {
             split: cx.new(|_| ResizableState::default()),
             lists_split: cx.new(|_| ResizableState::default()),
             focus: cx.focus_handle(),
+            patch: None,
+            lines: LineSelection::default(),
             _diff: None,
             _subs: subs,
         }
@@ -329,6 +347,8 @@ impl ChangesView {
     fn load_diff(&mut self, cx: &mut Context<Self>) {
         let Some(shown) = self.shown.clone() else {
             self.loaded = None;
+            self.patch = None;
+            self.lines.clear();
             self._diff = None;
             return;
         };
@@ -347,17 +367,17 @@ impl ChangesView {
         let repo = self.repo.clone();
         let task = cx.background_executor().spawn(async move {
             let started = std::time::Instant::now();
-            let content = local_diff(&repo, &entry, shown.side, &prefs, &theme);
+            let (content, patch) = local_diff(&repo, &entry, shown.side, &prefs, &theme);
             tracing::debug!(
                 path = %entry.path.display(),
                 ms = started.elapsed().as_millis() as u64,
                 "local diff"
             );
-            content
+            (content, patch)
         });
         let for_shown = self.shown.clone();
         self._diff = Some(cx.spawn(async move |this, cx| {
-            let content = task.await;
+            let (content, patch) = task.await;
             let _ = this.update(cx, |v, cx| {
                 if v.shown != for_shown {
                     return;
@@ -366,6 +386,8 @@ impl ChangesView {
                     .loaded
                     .as_ref()
                     .is_some_and(|l| l.file == file_key(&v.shown));
+                v.patch = patch.map(Arc::new);
+                v.lines.clear();
                 v.loaded = Some(Rc::new(Loaded {
                     file: file_key(&v.shown),
                     prefs,
@@ -378,6 +400,151 @@ impl ChangesView {
                 cx.notify();
             });
         }));
+    }
+
+    // ---------------------------------------------------------------- hunks and lines
+
+    /// Clicks on changed lines and hunk buttons, when the shown diff can be staged
+    /// in parts.
+    fn interact(&self, cx: &mut Context<Self>) -> Option<Rc<diff_view::Interact>> {
+        self.patch.as_ref()?;
+        let side = self.shown.as_ref()?.side;
+        let this = cx.entity().downgrade();
+        let on_line: diff_view::OnLine = Rc::new(move |l, ev, _w, cx| {
+            let _ = this.update(cx, |v, cx| v.click_line(l, ev, cx));
+        });
+        let this = cx.entity().downgrade();
+        let busy = self.busy;
+        let hunk_buttons: diff_view::HunkButtons = Rc::new(move |h, p| {
+            let button = |label: &'static str, action: stage::Action| {
+                let this = this.clone();
+                small_button(("hunk", h * 4 + action as usize), label, !busy, p)
+                    .on_click(move |_, window, cx| {
+                        let _ = this
+                            .update(cx, |v, cx| v.apply_part(action, Part::Hunk(h), window, cx));
+                    })
+                    .into_any_element()
+            };
+            match side {
+                Side::Unstaged => vec![
+                    button("Stage Hunk", stage::Action::Stage),
+                    button("Discard", stage::Action::Discard),
+                ],
+                Side::Staged => vec![button("Unstage Hunk", stage::Action::Unstage)],
+            }
+        });
+        Some(Rc::new(diff_view::Interact {
+            selected: self.lines.lines.clone(),
+            on_line,
+            hunk_buttons,
+        }))
+    }
+
+    fn click_line(&mut self, l: usize, ev: &ClickEvent, cx: &mut Context<Self>) {
+        let m = ev.modifiers();
+        if m.shift {
+            let changed: Vec<usize> = self.patch.as_ref().map_or_else(Vec::new, |p| {
+                (0..p.diff.len())
+                    .filter(|i| p.diff.line(*i).kind != LineKind::Context)
+                    .collect()
+            });
+            self.lines.extend(l, &changed);
+        } else if m.secondary() {
+            self.lines.toggle(l);
+        } else {
+            self.lines.click(l);
+        }
+        cx.notify();
+    }
+
+    /// "Stage Lines" / "Discard Lines" / "Unstage Lines" while lines are picked.
+    fn line_buttons(&self, p: &Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let n = self.lines.lines.len();
+        let Some(side) = self.shown.as_ref().map(|s| s.side).filter(|_| n > 0) else {
+            return Vec::new();
+        };
+        let label = |verb: &str| {
+            if n == 1 {
+                format!("{verb} Line")
+            } else {
+                format!("{verb} {n} Lines")
+            }
+        };
+        let button = |id: &'static str, text: String, action: stage::Action| {
+            small_button(id, text, !self.busy, p)
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.apply_part(action, Part::Lines, window, cx)
+                }))
+                .into_any_element()
+        };
+        match side {
+            Side::Unstaged => vec![
+                button("stage-lines", label("Stage"), stage::Action::Stage),
+                button("discard-lines", label("Discard"), stage::Action::Discard),
+            ],
+            Side::Staged => vec![button(
+                "unstage-lines",
+                label("Unstage"),
+                stage::Action::Unstage,
+            )],
+        }
+    }
+
+    /// Stage, unstage or discard a hunk or the picked lines. Discarding asks first: it
+    /// cannot be undone.
+    fn apply_part(
+        &mut self,
+        action: stage::Action,
+        part: Part,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(patch) = self.patch.clone() else {
+            return;
+        };
+        let chosen: std::collections::HashSet<usize> = match part {
+            Part::Hunk(h) => patch
+                .diff
+                .hunks()
+                .get(h)
+                .map(|h| h.lines.clone().collect())
+                .unwrap_or_default(),
+            Part::Lines => self.lines.lines.clone(),
+        };
+        if chosen.is_empty() || self.busy {
+            return;
+        }
+        let run = move |this: &mut Self, cx: &mut Context<Self>| {
+            let (patch, chosen) = (patch.clone(), chosen.clone());
+            this.run(
+                move |r| stage::apply_lines(r, &patch, |i| chosen.contains(&i), action).map(|_| ()),
+                cx,
+            );
+        };
+        if action != stage::Action::Discard {
+            return run(self, cx);
+        }
+        let what = match part {
+            Part::Hunk(_) => "this hunk",
+            Part::Lines => "the selected lines",
+        };
+        let this = cx.entity().downgrade();
+        let run = Rc::new(run);
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            let this = this.clone();
+            let run = run.clone();
+            alert
+                .confirm()
+                .title(format!("Discard {what}?"))
+                .description("The changes are removed from the file. This cannot be undone.")
+                .ok_text("Discard")
+                .ok_variant(ButtonVariant::Danger)
+                .on_ok(move |_, _, cx| {
+                    let run = run.clone();
+                    let _ = this.update(cx, |v, cx| run(v, cx));
+                    true
+                })
+        });
     }
 
     // ---------------------------------------------------------------- render
@@ -577,7 +744,7 @@ impl ChangesView {
             .into_any_element()
     }
 
-    fn render_diff_toolbar(&self, p: &Palette, cx: &App) -> AnyElement {
+    fn render_diff_toolbar(&self, p: &Palette, cx: &mut Context<Self>) -> AnyElement {
         let stats = self.loaded.as_ref().and_then(|l| l.content.stats());
         div()
             .h(rpx(30.))
@@ -618,16 +785,18 @@ impl ChangesView {
                         d.children(diff_view::stats_chips(a, r, p))
                     }),
             )
+            .children(self.line_buttons(p, cx))
             // `git diff` of the work tree ignores the whitespace setting (hunk staging
             // needs the real lines), so it is not offered here.
             .child(diff_view::settings(p, false, cx))
             .into_any_element()
     }
 
-    fn render_diff(&self, p: &Palette, row_h: f32, cx: &App) -> AnyElement {
+    fn render_diff(&self, p: &Palette, row_h: f32, cx: &mut Context<Self>) -> AnyElement {
         match &self.loaded {
             Some(l) if l.file == file_key(&self.shown) => {
-                diff_view::body(l, &self.diff_scroll, row_h, p, cx)
+                let interact = self.interact(cx);
+                diff_view::body(l, &self.diff_scroll, row_h, p, interact, cx)
             }
             _ if self.shown.is_some() => div().flex_1().into_any_element(),
             _ if self.ready && self.count() == 0 => diff_view::message("No local changes.", p.fg3),
@@ -643,18 +812,18 @@ fn local_diff(
     side: Side,
     prefs: &DiffPrefs,
     theme: &std::sync::Arc<gpui_kit::component::highlighter::HighlightTheme>,
-) -> Content {
+) -> (Content, Option<FilePatch>) {
     if e.conflict().is_some() {
-        return Content::Failed(
-            "This file has conflicts. Resolve them in the file, then stage it.".into(),
-        );
+        let note = "This file has conflicts. Resolve them in the file, then stage it.";
+        return (Content::Failed(note.into()), None);
     }
     if e.kind == status::EntryKind::Untracked {
         let full = repo.root().join(&e.path);
-        return match std::fs::read(&full) {
+        let content = match std::fs::read(&full) {
             Ok(bytes) => Content::from_bytes(&e.path, None, Some(&bytes), prefs, theme),
             Err(err) => Content::Failed(format!("Cannot read {}: {err}", e.path.display())),
         };
+        return (content, None);
     }
     let mut paths: Vec<&Path> = vec![e.path.as_path()];
     if side == Side::Staged
@@ -668,20 +837,20 @@ fn local_diff(
     };
     match res {
         Ok(files) => match files.into_iter().next() {
-            Some(f) if f.binary => Content::Binary {
-                old: None,
-                new: None,
-            },
-            Some(f) => Content::text(f.diff, &e.path, None, theme),
-            None => Content::Text {
-                diff: Default::default(),
-                inline: Vec::new(),
-                sbs: Vec::new(),
-                widest: None,
-                syntax: None,
-            },
+            Some(f) if f.binary => (
+                Content::Binary {
+                    old: None,
+                    new: None,
+                },
+                None,
+            ),
+            Some(f) => (Content::text(f.diff.clone(), &e.path, None, theme), Some(f)),
+            None => (
+                Content::text(Default::default(), &e.path, None, theme),
+                None,
+            ),
         },
-        Err(err) => Content::Failed(err.to_string()),
+        Err(err) => (Content::Failed(err.to_string()), None),
     }
 }
 
@@ -740,6 +909,7 @@ fn small_button(
         .rounded(px(4.))
         .border_1()
         .border_color(p.bd2)
+        .font_family(SANS)
         .text_size(ts::SMALL)
         .font_weight(FontWeight::MEDIUM)
         .text_color(if enabled { p.fg } else { p.fg3 })

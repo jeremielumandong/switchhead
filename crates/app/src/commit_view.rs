@@ -651,7 +651,7 @@ impl CommitView {
 
     fn render_diff(&self, p: &Palette, row_h: f32, cx: &mut Context<Self>) -> AnyElement {
         match &self.loaded {
-            Some(loaded) => diff_view::body(loaded, &self.diff_scroll, row_h, p, cx),
+            Some(loaded) => diff_view::body(loaded, &self.diff_scroll, row_h, p, None, cx),
             None if self.diff_loading || self.loading => div().flex_1().into_any_element(),
             None if self.files.is_empty() && self.info.is_some() => {
                 diff_view::message("This commit changes no files.", p.fg3)

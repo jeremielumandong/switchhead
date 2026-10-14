@@ -2,6 +2,7 @@
 //! [`Content`] of one file, its virtualized line list (inline or side by side, with word
 //! highlights and syntax colors), and the diff settings controls.
 
+use std::collections::HashSet;
 use std::ops::Range;
 use std::path::Path;
 use std::rc::Rc;
@@ -14,10 +15,10 @@ use gpui_kit::component::highlighter::HighlightTheme;
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Div, FontWeight, HighlightStyle, Hsla, InteractiveElement as _, IntoElement,
-    ListHorizontalSizingBehavior, ParentElement as _, SharedString,
-    StatefulInteractiveElement as _, Styled as _, StyledText, UniformListScrollHandle, div, px,
-    uniform_list,
+    AnyElement, App, ClickEvent, Div, FontWeight, HighlightStyle, Hsla, InteractiveElement as _,
+    IntoElement, ListHorizontalSizingBehavior, ParentElement as _, SharedString,
+    StatefulInteractiveElement as _, Styled as _, StyledText, UniformListScrollHandle, Window, div,
+    px, uniform_list,
 };
 use switchhead_git::Oid;
 use switchhead_git::diff::{FileDiff, FileStatus, LineKind, TextDiff};
@@ -127,6 +128,22 @@ impl Content {
     }
 }
 
+/// Click handler for a diff line (its index in the [`TextDiff`]).
+pub(crate) type OnLine = Rc<dyn Fn(usize, &ClickEvent, &mut Window, &mut App)>;
+/// Buttons for a hunk header (the hunk's index).
+pub(crate) type HunkButtons = Rc<dyn Fn(usize, &Palette) -> Vec<AnyElement>>;
+
+/// Makes a diff interactive (Local Changes): changed lines can be clicked and show as
+/// selected, and hunk headers carry buttons.
+pub(crate) struct Interact {
+    /// Selected lines (indices into the [`TextDiff`]).
+    pub selected: HashSet<usize>,
+    /// A changed line was clicked.
+    pub on_line: OnLine,
+    /// The buttons at the start of each hunk header.
+    pub hunk_buttons: HunkButtons,
+}
+
 /// A centered note in the diff area.
 pub(crate) fn message(text: impl Into<SharedString>, color: Hsla) -> AnyElement {
     div()
@@ -147,6 +164,7 @@ pub(crate) fn body(
     scroll: &UniformListScrollHandle,
     row_h: f32,
     p: &Palette,
+    interact: Option<Rc<Interact>>,
     cx: &App,
 ) -> AnyElement {
     let side_by_side = loaded.prefs.side_by_side;
@@ -191,7 +209,7 @@ pub(crate) fn body(
             let list = uniform_list("diff", count, move |range: Range<usize>, _w, cx| {
                 let p = palette(cx);
                 range
-                    .map(|i| render_row(&loaded, i, &p, row_h))
+                    .map(|i| render_row(&loaded, i, &p, row_h, interact.as_deref()))
                     .collect::<Vec<_>>()
             })
             .track_scroll(scroll)
@@ -341,7 +359,13 @@ pub(crate) fn row_height(cx: &App) -> f32 {
 /// Diff row height at 100 % zoom.
 const ROW_H: f32 = 20.0;
 
-fn render_row(loaded: &Loaded, i: usize, p: &Palette, row_h: f32) -> AnyElement {
+fn render_row(
+    loaded: &Loaded,
+    i: usize,
+    p: &Palette,
+    row_h: f32,
+    interact: Option<&Interact>,
+) -> AnyElement {
     let Content::Text {
         diff,
         inline,
@@ -358,8 +382,8 @@ fn render_row(loaded: &Loaded, i: usize, p: &Palette, row_h: f32) -> AnyElement 
         .h(px(row_h))
         .flex()
         .items_center();
-    let hunk_row = |h: u32| {
-        let Some(h) = diff.hunks().get(h as usize) else {
+    let hunk_row = |hunk: u32| {
+        let Some(h) = diff.hunks().get(hunk as usize) else {
             return div().into_any_element();
         };
         let mut text = format!(
@@ -370,16 +394,21 @@ fn render_row(loaded: &Loaded, i: usize, p: &Palette, row_h: f32) -> AnyElement 
             text.push(' ');
             text.push_str(&h.section);
         }
+        let buttons = interact
+            .map(|x| (x.hunk_buttons)(hunk as usize, p))
+            .unwrap_or_default();
         div()
             .id(("diff", i))
             .w_full()
             .h(px(row_h))
             .flex()
             .items_center()
+            .gap(rpx(6.))
             .px(rpx(8.))
             .bg(p.panel)
             .text_color(p.fg3)
             .whitespace_nowrap()
+            .children(buttons)
             .child(SharedString::from(text))
             .into_any_element()
     };
@@ -387,9 +416,9 @@ fn render_row(loaded: &Loaded, i: usize, p: &Palette, row_h: f32) -> AnyElement 
         match sbs.get(i) {
             Some(SbsRow::Hunk(h)) => hunk_row(*h),
             Some(SbsRow::Pair(old, new)) => row
-                .child(side_cell(diff, syntax.as_ref(), *old, true, p))
+                .child(side_cell(diff, syntax.as_ref(), *old, true, p, interact))
                 .child(div().w(px(1.)).h_full().flex_none().bg(p.bd))
-                .child(side_cell(diff, syntax.as_ref(), *new, false, p))
+                .child(side_cell(diff, syntax.as_ref(), *new, false, p, interact))
                 .into_any_element(),
             None => row.into_any_element(),
         }
@@ -400,7 +429,9 @@ fn render_row(loaded: &Loaded, i: usize, p: &Palette, row_h: f32) -> AnyElement 
                 let l = *l as usize;
                 let line = diff.line(l);
                 let (bg, sign) = line_colors(line.kind, p);
+                let row = clickable(row, line.kind, l, interact, p);
                 row.when_some(bg, |d, bg| d.bg(bg))
+                    .when(selected(interact, l), |d| d.bg(sign.opacity(0.34)))
                     .child(gutter(line.old_no, p))
                     .child(gutter(line.new_no, p))
                     .child(
@@ -434,8 +465,10 @@ fn side_cell(
     line: Option<u32>,
     old: bool,
     p: &Palette,
+    interact: Option<&Interact>,
 ) -> AnyElement {
     let cell = div()
+        .id(("cell", usize::from(old) | (line.unwrap_or(0) as usize) << 1))
         .flex_1()
         .min_w_0()
         .h_full()
@@ -448,7 +481,9 @@ fn side_cell(
     let l = l as usize;
     let d = diff.line(l);
     let (bg, sign) = line_colors(d.kind, p);
+    let cell = clickable(cell, d.kind, l, interact, p);
     cell.when_some(bg, |c, bg| c.bg(bg))
+        .when(selected(interact, l), |c| c.bg(sign.opacity(0.34)))
         .child(gutter(if old { d.old_no } else { d.new_no }, p))
         .child(
             div()
@@ -473,6 +508,30 @@ fn side_cell(
                 .child(line_text(diff, syntax, l, p)),
         )
         .into_any_element()
+}
+
+/// Hook a changed line's clicks up to [`Interact::on_line`].
+fn clickable(
+    el: gpui_kit::Stateful<Div>,
+    kind: LineKind,
+    l: usize,
+    interact: Option<&Interact>,
+    p: &Palette,
+) -> gpui_kit::Stateful<Div> {
+    match interact {
+        Some(x) if kind != LineKind::Context => {
+            let on_line = x.on_line.clone();
+            let hover = p.hover;
+            el.cursor_pointer()
+                .hover(move |s| s.border_color(hover))
+                .on_click(move |ev, window, cx| on_line(l, ev, window, cx))
+        }
+        _ => el,
+    }
+}
+
+fn selected(interact: Option<&Interact>, l: usize) -> bool {
+    interact.is_some_and(|x| x.selected.contains(&l))
 }
 
 /// A line's text with syntax colors and changed-word backgrounds.

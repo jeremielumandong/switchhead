@@ -120,7 +120,11 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   selected and all; the focused file's `git diff` (or new file's content). Status re-reads
   on open, Refresh, index changes and window focus. The diff body moved to `diff_view.rs`,
   shared with the commit pane. Local diffs have no syntax colors yet (Follow-ups).*
-- [ ] M3-2 Hunk and line staging, unstaging and discarding from the diff view.
+- [x] M3-2 Hunk and line staging, unstaging and discarding from the diff view.
+  *Hunk headers carry Stage Hunk / Discard (unstaged) or Unstage Hunk (staged); changed
+  lines are picked with click, Shift-click and Ctrl/Cmd-click (both layouts) and staged
+  from the toolbar. `stage::apply_lines` applies the exact `git diff` shown; discarding
+  asks first in a gpui-kit alert dialog. New and deleted files stage whole only (M1-9).*
 - [ ] M3-3 Commit box: subject/body, amend (loads previous message), sign-off, skip hooks,
       commit message templates, recent messages, spell check, char counters.
 - [ ] M3-4 Discard changes, delete untracked, ignore file/pattern (`.gitignore`), assume

@@ -242,6 +242,54 @@ impl Selection {
     }
 }
 
+/// Lines picked in the focused file's diff for line staging. Only changed lines can
+/// be picked; `changed` is their sorted indices.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LineSelection {
+    /// Picked line indices.
+    pub lines: HashSet<usize>,
+    anchor: Option<usize>,
+}
+
+impl LineSelection {
+    /// Plain click: pick only `l` (clicking the only picked line clears it).
+    pub fn click(&mut self, l: usize) {
+        if self.lines.len() == 1 && self.lines.contains(&l) {
+            self.lines.clear();
+        } else {
+            self.lines = HashSet::from([l]);
+        }
+        self.anchor = Some(l);
+    }
+
+    /// Ctrl/Cmd-click: add or remove `l`.
+    pub fn toggle(&mut self, l: usize) {
+        if !self.lines.remove(&l) {
+            self.lines.insert(l);
+        }
+        self.anchor = Some(l);
+    }
+
+    /// Shift-click: pick the changed lines from the anchor to `l`.
+    pub fn extend(&mut self, l: usize, changed: &[usize]) {
+        let Some(a) = self.anchor else {
+            return self.click(l);
+        };
+        let (lo, hi) = (a.min(l), a.max(l));
+        self.lines = changed
+            .iter()
+            .copied()
+            .filter(|i| (lo..=hi).contains(i))
+            .collect();
+    }
+
+    /// Forget the picks (another file, or the diff changed).
+    pub fn clear(&mut self) {
+        self.lines.clear();
+        self.anchor = None;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -314,5 +362,19 @@ u UU N... 100644 100644 100644 100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa a
         assert_eq!(s.retain(&paths(&["a"])), Some(PathBuf::from("a")));
         assert_eq!(s.retain(&[]), None);
         assert!(s.paths.is_empty());
+    }
+
+    #[test]
+    fn picks_changed_lines() {
+        let changed = [2, 3, 4, 8, 9];
+        let mut s = LineSelection::default();
+        s.click(3);
+        s.extend(8, &changed);
+        assert_eq!(s.lines, HashSet::from([3, 4, 8]));
+        s.toggle(4);
+        assert_eq!(s.lines, HashSet::from([3, 8]));
+        s.click(9);
+        s.click(9);
+        assert!(s.lines.is_empty());
     }
 }
