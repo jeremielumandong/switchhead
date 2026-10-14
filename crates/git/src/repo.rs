@@ -254,9 +254,6 @@ mod tests {
             }
         );
         let plain = tempfile::tempdir().unwrap();
-        assert!(matches!(
-            Repo::open(plain.path()),
-            Err(Error::NotARepo(_))
-        ));
+        assert!(matches!(Repo::open(plain.path()), Err(Error::NotARepo(_))));
     }
 }

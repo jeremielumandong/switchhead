@@ -9,17 +9,10 @@
 //!
 //! Nothing here touches a UI: callers run these functions off the UI thread.
 
-pub mod blame;
+// Planned modules (PLAN.md, M1): log, graph, refs, status, diff, conflict, rebase, blame.
 pub mod cli;
-pub mod conflict;
-pub mod diff;
 pub mod discover;
-pub mod graph;
-pub mod log;
-pub mod rebase;
-pub mod refs;
 pub mod repo;
-pub mod status;
 
 use std::fmt::Display;
 use std::path::PathBuf;

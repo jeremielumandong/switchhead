@@ -7,7 +7,7 @@
 //! and can be cancelled.
 
 use std::ffi::OsStr;
-use std::io::{BufRead as _, BufReader, Read as _, Write as _};
+use std::io::{BufReader, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -311,8 +311,12 @@ mod tests {
         r.write("a.txt", "x\n");
         let git = Git::new(r.path()).unwrap();
         git.run(&["add", "a.txt"]).unwrap();
-        git.run_with(&["commit", "-q", "-F", "-"], Some(b"from stdin\n\nbody"), &[])
-            .unwrap();
+        git.run_with(
+            &["commit", "-q", "-F", "-"],
+            Some(b"from stdin\n\nbody"),
+            &[],
+        )
+        .unwrap();
         let msg = git.text(&["log", "-1", "--format=%B"]).unwrap();
         assert_eq!(msg.trim(), "from stdin\n\nbody");
     }
