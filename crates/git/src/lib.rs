@@ -9,13 +9,15 @@
 //!
 //! Nothing here touches a UI: callers run these functions off the UI thread.
 
-// Planned modules (PLAN.md, M1): rebase, blame, operations.
+pub mod blame;
 pub mod cli;
 pub mod conflict;
 pub mod diff;
 pub mod discover;
 pub mod graph;
 pub mod log;
+pub mod ops;
+pub mod rebase;
 pub mod refs;
 pub mod repo;
 pub mod stage;
