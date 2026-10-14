@@ -16,6 +16,7 @@ pub mod conflict;
 pub mod diff;
 pub mod discover;
 pub mod graph;
+pub mod identity;
 pub mod log;
 pub mod ops;
 pub mod rebase;

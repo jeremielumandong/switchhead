@@ -16,10 +16,14 @@ use gpui_kit::{
 use switchhead_git::Repo;
 use switchhead_git::ops::CommitOptions;
 
+use switchhead_git::identity::Current;
+
 use crate::appearance::{rpx, ts};
 use crate::store::RecentMessages;
 use crate::theme::{MONO, Palette, palette};
 use crate::ui;
+
+mod identity;
 
 /// Subject length git tooling suggests.
 pub const SUBJECT_SOFT: usize = 50;
@@ -49,6 +53,8 @@ pub struct CommitBox {
     staged: usize,
     busy: bool,
     error: Option<SharedString>,
+    /// Who commits (`None` until read).
+    identity: Option<Current>,
     _subs: Vec<Subscription>,
 }
 
@@ -107,9 +113,11 @@ impl CommitBox {
             staged: 0,
             busy: false,
             error: None,
+            identity: None,
             _subs: subs,
         };
         this.load_template(window, cx);
+        this.load_identity(cx);
         this
     }
 
@@ -336,6 +344,7 @@ impl Render for CommitBox {
                             .child(len.to_string()),
                     ),
             )
+            .child(self.render_identity(cx))
             .child(Input::new(&self.summary).small().text_size(ts::BODY))
             .child(Textarea::new(&self.body).small().text_size(ts::BODY))
             .child(
