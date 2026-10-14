@@ -126,6 +126,7 @@ fn main() -> Result<()> {
             appearance::set(look, cx);
             cx.set_global(state.diff);
             cx.set_global(state.messages.clone());
+            cx.set_global(state.identities.clone());
             cx.set_global(image_diff::ImageView::default());
             let theme_key = std::env::var("SWITCHHEAD_THEME")
                 .ok()

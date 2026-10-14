@@ -53,6 +53,7 @@ pub struct Workspace {
     _omarchy: Option<Task<()>>,
     _diff_prefs: gpui_kit::Subscription,
     _messages: gpui_kit::Subscription,
+    _identities: gpui_kit::Subscription,
     /// Quick Launch, while open.
     palette: Option<(Entity<PaletteView>, gpui_kit::Subscription)>,
     _activation: gpui_kit::Subscription,
@@ -111,6 +112,13 @@ impl Workspace {
                 this.save(cx);
             }
         });
+        let identities = cx.observe_global::<store::Identities>(|this, cx| {
+            let m = cx.global::<store::Identities>();
+            if this.state.identities != *m {
+                this.state.identities = m.clone();
+                this.save(cx);
+            }
+        });
         // Coming back to the window: pick up what changed in a terminal meanwhile.
         let activation = cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active()
@@ -134,6 +142,7 @@ impl Workspace {
             _omarchy: omarchy,
             _diff_prefs: diff_prefs,
             _messages: messages,
+            _identities: identities,
             palette: None,
             _activation: activation,
             repo_subs: Vec::new(),

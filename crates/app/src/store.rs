@@ -71,6 +71,46 @@ pub struct State {
     pub diff: DiffPrefs,
     /// Recently committed messages.
     pub messages: RecentMessages,
+    /// Saved commit identities.
+    pub identities: Identities,
+}
+
+/// A saved commit identity: name, email and optional signing key.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct IdentityProfile {
+    pub name: String,
+    pub email: String,
+    pub signing_key: Option<String>,
+}
+
+impl IdentityProfile {
+    /// The git engine's form.
+    pub fn to_git(&self) -> switchhead_git::identity::Identity {
+        switchhead_git::identity::Identity {
+            name: self.name.clone(),
+            email: self.email.clone(),
+            signing_key: self.signing_key.clone(),
+        }
+    }
+}
+
+/// Saved commit identities, in the order they were added (every repository; a GPUI
+/// global while the app runs).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Identities(pub Vec<IdentityProfile>);
+
+impl gpui_kit::Global for Identities {}
+
+impl Identities {
+    /// Add `p`, replacing a saved one with the same email.
+    pub fn save(&mut self, p: IdentityProfile) {
+        match self.0.iter_mut().find(|q| q.email == p.email) {
+            Some(q) => *q = p,
+            None => self.0.push(p),
+        }
+    }
 }
 
 /// Commit messages used recently, newest first (every repository; a GPUI global while
@@ -219,6 +259,20 @@ pub fn now() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn identities_replace_by_email() {
+        let mut ids = Identities::default();
+        let p = |name: &str, email: &str| IdentityProfile {
+            name: name.into(),
+            email: email.into(),
+            signing_key: None,
+        };
+        ids.save(p("Jane", "jane@work"));
+        ids.save(p("Jane", "jane@home"));
+        ids.save(p("Jane D.", "jane@work"));
+        assert_eq!(ids.0, [p("Jane D.", "jane@work"), p("Jane", "jane@home")]);
+    }
 
     #[test]
     fn recent_messages_move_to_front() {

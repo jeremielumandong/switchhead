@@ -157,8 +157,9 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [x] M3-7 Diff minimap: a narrow strip beside the diff marking added / removed / changed
       lines over the whole file; click or drag to jump. Commit and local-changes diffs.
   A strip beside every diff (commit and Local Changes, inline and side by side) marks added, removed and changed rows (`diff_model::inline_marks` / `sbs_marks`; tested) over the whole diff, with the visible part shaded; click or drag scrolls there (`minimap.rs`). It spans the diff's hunks, not unchanged parts of the file outside them.
-- [ ] M3-8 Git identity profiles: saved name / email / signing key sets, one picked per repo
+- [x] M3-8 Git identity profiles: saved name / email / signing key sets, one picked per repo
       (written to the repo's local config); current identity shown in the commit box.
+  The commit box shows who commits ("Jane <jane@x>", from this repo or global, with a signing key). Its menu picks a saved identity (written to the repo's local `user.name` / `user.email` / `user.signingkey`, `git::identity`; tested), goes back to the global one, saves the current one, or adds a new one (name, email, optional key). Identities are saved in the app state for every repository.
 
 ## M4 — Branches, remotes, history (Fork parity)
 
