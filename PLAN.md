@@ -133,8 +133,13 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   (state.json), and a subject counter (amber past 50, red past 72). Ctrl/Cmd+Enter
   commits; Ctrl/Cmd+Shift+Enter or "Commit…" jumps to it. Hook output shows in full.
   Spell check is deferred: no approved crate (Follow-ups).*
-- [ ] M3-4 Discard changes, delete untracked, ignore file/pattern (`.gitignore`), assume
+- [x] M3-4 Discard changes, delete untracked, ignore file/pattern (`.gitignore`), assume
       unchanged / skip worktree.
+  *Right-click menu on the file lists (`changes_view/menu.rs`; right-click selects the row
+  first): Stage / Unstage, Discard Changes or Delete (asks; Delete or Ctrl/Cmd+Backspace
+  too), Ignore (the file, `*.ext`, each parent folder; untracked files), Assume Unchanged,
+  Skip Worktree and Copy Path. Hidden files come from the index in process
+  (`status::hidden`) and are listed under "N hidden" in the Unstaged header to show again.*
 - [ ] M3-5 Image diff (side by side, swipe, onion skin) and binary file info.
 - [ ] M3-6 Merge conflict helper: list conflicted files, choose ours/theirs, built-in 3-way
       merge editor (base/ours/theirs/result), open external merge tool, mark resolved,

@@ -12,18 +12,21 @@ use std::sync::Arc;
 use gpui_kit::AppContext as _;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::ButtonVariant;
+use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::resizable::{ResizableState, h_resizable, resizable_panel};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, ClickEvent, Context, Entity, FocusHandle, Focusable, FontWeight, Hsla,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, ScrollStrategy, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, Task, UniformListScrollHandle,
-    Window, div, px, uniform_list,
+    InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, ParentElement as _, Render,
+    ScrollStrategy, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task,
+    UniformListScrollHandle, Window, div, px, uniform_list,
 };
 use switchhead_git::Repo;
 use switchhead_git::diff::{self, FilePatch, LineKind};
 use switchhead_git::stage;
 use switchhead_git::status::{self, Status, StatusOptions};
+
+mod menu;
 
 use crate::actions;
 use crate::appearance::{rpx, ts};
@@ -83,6 +86,8 @@ pub struct ChangesView {
     commit: Option<(Entity<CommitBox>, Subscription)>,
     /// Focus the commit subject once the box exists.
     focus_commit: bool,
+    /// Tracked files marked assume-unchanged or skip-worktree.
+    hidden: Rc<Vec<status::Hidden>>,
     _subs: Vec<Subscription>,
 }
 
@@ -126,6 +131,7 @@ impl ChangesView {
             _diff: None,
             commit: None,
             focus_commit: false,
+            hidden: Rc::default(),
             _subs: subs,
         }
     }
@@ -148,15 +154,24 @@ impl ChangesView {
         }
         self.reading = true;
         let repo = self.repo.clone();
-        let task = cx
-            .background_executor()
-            .spawn(async move { status::status(&repo, StatusOptions::default()) });
+        let task = cx.background_executor().spawn(async move {
+            let st = status::status(&repo, StatusOptions::default())?;
+            // A failed index read only loses the hidden-files list.
+            let hidden = status::hidden(&repo).unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "could not read hidden files");
+                Vec::new()
+            });
+            Ok::<_, switchhead_git::Error>((st, hidden))
+        });
         cx.spawn(async move |this, cx| {
             let res = task.await;
             let _ = this.update(cx, |v, cx| {
                 v.reading = false;
                 match res {
-                    Ok(st) => v.set_status(st, cx),
+                    Ok((st, hidden)) => {
+                        v.hidden = Rc::new(hidden);
+                        v.set_status(st, cx)
+                    }
                     Err(e) => v.error = Some(e.to_string().into()),
                 }
                 if std::mem::take(&mut v.reread) {
@@ -659,6 +674,9 @@ impl ChangesView {
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_selected(cx))),
                 )
             })
+            .when(side == Side::Unstaged, |d| {
+                d.children(self.render_hidden_menu(cx))
+            })
             .child(
                 small_button(("all", side as usize), all, n > 0 && !self.busy, p).on_click(
                     cx.listener(move |this, _, _, cx| match side {
@@ -678,7 +696,7 @@ impl ChangesView {
                 .child(if self.ready { empty } else { "" })
                 .into_any_element()
         } else {
-            uniform_list(
+            let list = uniform_list(
                 match side {
                     Side::Unstaged => "unstaged",
                     Side::Staged => "staged",
@@ -692,9 +710,19 @@ impl ChangesView {
                 }),
             )
             .track_scroll(self.scroll(side))
-            .flex_1()
-            .min_h_0()
-            .into_any_element()
+            .size_full()
+            .into_any_element();
+            let view = cx.entity().downgrade();
+            div()
+                .id(match side {
+                    Side::Unstaged => "unstaged-menu",
+                    Side::Staged => "staged-menu",
+                })
+                .flex_1()
+                .min_h_0()
+                .child(list)
+                .context_menu(move |menu, window, cx| menu::build(menu, &view, window, cx))
+                .into_any_element()
         };
         div()
             .size_full()
@@ -756,6 +784,12 @@ impl ChangesView {
             .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
                 window.focus(&this.focus, cx);
                 this.on_click(side, i, ev, cx);
+            }))
+            .capture_any_mouse_down(cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
+                if ev.button == MouseButton::Right {
+                    window.focus(&this.focus, cx);
+                    this.select_for_menu(side, i, cx);
+                }
             }))
             .child(badge_chip(badge, p))
             .child(
@@ -1062,6 +1096,11 @@ impl Render for ChangesView {
             .on_action(cx.listener(|this, _: &actions::SelectAllFiles, _, cx| this.select_all(cx)))
             .on_action(
                 cx.listener(|this, _: &actions::ToggleStaged, _, cx| this.toggle_selected(cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &actions::DiscardSelected, window, cx| {
+                    this.discard_selected(window, cx)
+                }),
             )
             .on_action(cx.listener(|this, _: &actions::SwitchFileList, _, cx| {
                 let side = this.selection.side.other();

@@ -48,6 +48,7 @@ actions!(
         SelectAllFiles,
         SwitchFileList,
         WriteCommitMessage,
+        DiscardSelected,
     ]
 );
 
@@ -167,6 +168,12 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("secondary-a", SelectAllFiles, Some("Changes && !Input")),
         KeyBinding::new("tab", SwitchFileList, Some("Changes && !Input")),
         KeyBinding::new("secondary-shift-enter", WriteCommitMessage, None),
+        KeyBinding::new(
+            "secondary-backspace",
+            DiscardSelected,
+            Some("Changes && !Input"),
+        ),
+        KeyBinding::new("delete", DiscardSelected, Some("Changes && !Input")),
     ]);
 }
 

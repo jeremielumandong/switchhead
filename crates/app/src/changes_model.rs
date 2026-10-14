@@ -290,9 +290,41 @@ impl LineSelection {
     }
 }
 
+/// `.gitignore` patterns offered for an untracked `path`: the file itself, files with its
+/// extension, then each folder above it from the nearest out. Paths are anchored with a
+/// leading `/` so they match only at the work tree root.
+pub fn ignore_patterns(path: &Path) -> Vec<String> {
+    let path = path.to_string_lossy().replace('\\', "/");
+    let path = path.trim_end_matches('/');
+    let mut out = vec![format!("/{path}")];
+    let name = path.rsplit('/').next().unwrap_or(path);
+    if let Some((stem, ext)) = name.rsplit_once('.')
+        && !stem.is_empty()
+        && !ext.is_empty()
+    {
+        out.push(format!("*.{ext}"));
+    }
+    let mut dir = path;
+    while let Some((parent, _)) = dir.rsplit_once('/') {
+        out.push(format!("/{parent}/"));
+        dir = parent;
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn offers_ignore_patterns() {
+        assert_eq!(
+            ignore_patterns(Path::new("src/gen/out.rs")),
+            ["/src/gen/out.rs", "*.rs", "/src/gen/", "/src/"]
+        );
+        assert_eq!(ignore_patterns(Path::new(".env")), ["/.env"]);
+        assert_eq!(ignore_patterns(Path::new("build/")), ["/build"]);
+    }
     use switchhead_git::status;
 
     fn paths(names: &[&str]) -> Vec<PathBuf> {
