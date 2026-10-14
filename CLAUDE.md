@@ -179,8 +179,8 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
 
 ## Gotchas
 
-- This dev container cannot reach `static.rust-lang.org`, so rustup cannot install 1.98.1:
-  build here with `RUSTUP_TOOLCHAIN=stable` (1.97). The workspace `rust-version` is 1.97.
+- Some dev containers cannot reach `static.rust-lang.org`, so rustup cannot install 1.98.1:
+  build there with `RUSTUP_TOOLCHAIN=stable` (1.97). The workspace `rust-version` is 1.97.
 - Linking the app on Linux needs `libxkbcommon-dev` and `libxkbcommon-x11-dev`. GPUI renders
   through Vulkan: under Xvfb install `mesa-vulkan-drivers` (lavapipe) or the window fails with
   "Failed to create surface".
@@ -191,3 +191,8 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
   `GIT_OPTIONAL_LOCKS=0` and `-c color.ui=false -c core.quotepath=false`.
 - GPUI: a `uniform_list` row sizes to its content, so rows with a `flex_1` column need
   `.w_full()`. Text in a flex row needs `min_w_0()` to truncate. (From Switchyard.)
+- gix's topo walk (`traverse::commit::topo`) computes in-degrees over the whole history
+  before yielding anything unless the commit-graph file gives generation numbers: on git/git
+  the first batch takes 1.9 s without it and 94 ms with it.
+- `gix::path::from_bstr` returns a `Result` (non-UTF-8 paths fail on Windows); status paths
+  fall back to a lossy conversion.
