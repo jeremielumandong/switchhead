@@ -112,6 +112,9 @@ pub(crate) mod testutil {
             r.git(&["config", "user.name", "Test"]);
             r.git(&["config", "user.email", "test@example.com"]);
             r.git(&["config", "commit.gpgsign", "false"]);
+            // Git for Windows turns autocrlf on in its system config, which `cli::Git`
+            // (rightly) reads; tests compare bytes, so keep files as written.
+            r.git(&["config", "core.autocrlf", "false"]);
             r
         }
 
