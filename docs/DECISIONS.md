@@ -72,3 +72,16 @@ highlighter with a `tree-sitter*` feature, so the workspace enables
 is added by hand; the grammars come with the approved gpui-kit. The diff view highlights
 the old and new file once on a background thread and cuts the spans per diff line
 (`diff_model::highlight`); files over 1 MB show without colors.
+
+## 2026-10-14 — GPUI Kit 0.7.3 on the application-patched GPUI Fast stack
+
+Jeremie asked to move to GPUI Kit 0.7.3 on GPUI Fast, as AgentOpsChat already does.
+switchhead now depends on `gpui-kit =0.7.3` and vendors AgentOpsChat's `vendor/gpui-base`
+(Kit 0.7.3's base with AgentOpsChat's input, selection and accessibility contributions) and
+`vendor/gpui-fast` (GPUI Fast at `598306f` with its keyboard, accessibility, retained
+rendering and Linux patches, plus `compat/*` facades that publish it as `gpui-pre` 0.3.9).
+`[patch.crates-io]` points the `gpui-base` and `gpui-pre*` names at those paths, and
+`[patch."https://github.com/longbridge/gpui-fast"]` points `gpui` / `gpui_linux` at the
+local copies, so the graph has one GPUI core. All of it is Apache-2.0. Switchyard stays on
+0.7.1 with upstream GPUI Fast for now, so modules ported from it may need small API fixes.
+The copy is kept byte-identical to AgentOpsChat's; changes to the stack land there first.

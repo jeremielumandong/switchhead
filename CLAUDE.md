@@ -42,13 +42,14 @@ PLAN.md updated.
 
 ```
 switchhead/
-  Cargo.toml              # workspace; shared [workspace.dependencies]; gpui-fast patch
+  Cargo.toml              # workspace; shared [workspace.dependencies]; vendored GPUI Fast patch
   rust-toolchain.toml     # 1.98.1, matching Switchyard / gpui-fast
   crates/
     git/     switchhead-git     Git engine: gix reads, `git` CLI writes, graph layout, parsers
     agents/  switchhead-agents  (M5) AgentAdapter + Claude Code / Codex / Gemini / custom, ported from switchyard-agents
     mcp/     switchhead-mcp     (M5) read-only git MCP server, served by `switchhead mcp`
     app/     switchhead-app     GPUI binary `switchhead`
+  vendor/gpui-base, vendor/gpui-fast   # application-patched GPUI Fast stack (from AgentOpsChat)
   docs/DECISIONS.md
 ```
 
@@ -144,7 +145,7 @@ Ask before adding anything else. Pin versions in `[workspace.dependencies]`.
 
 | Purpose | Crates |
 | --- | --- |
-| UI | `gpui-kit =0.7.1` (facade over `gpui-pre` + `gpui-component`, kept in lockstep) |
+| UI | `gpui-kit =0.7.3` (facade over `gpui-pre` + `gpui-component`, kept in lockstep) on the vendored GPUI Fast stack |
 | Git | `gix` 0.89 (features: max-performance-safe, sha1, basic, status, mailmap, parallel) |
 | Async (agents) | `tokio` (sync only) |
 | Serialization | `serde`, `serde_json` |
@@ -207,3 +208,9 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
   and `SyntaxHighlighter` does not exist. Unknown names fall back to `"text"` (no colors).
 - Git for Windows sets `core.autocrlf=true` in its system config, so `git apply` to the work
   tree writes CRLF there. `TestRepo` turns it off; tests that compare file bytes rely on that.
+- GPUI Kit 0.7.3 runs on the application-patched GPUI Fast stack vendored in `vendor/`
+  (a copy of AgentOpsChat's): `compat/*` facades publish GPUI Fast's core under the
+  `gpui-pre` 0.3.9 names Kit pins, `gpui` and `gpui_linux` are patched locally, and the
+  other GPUI Fast crates stay on git rev `598306f`. Do not enable gpui-kit's own `gpui-fast`
+  feature (that pulls the unpatched published runtime) and update `vendor/` from
+  AgentOpsChat rather than editing it here.

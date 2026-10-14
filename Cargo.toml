@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/git", "crates/app"]
+exclude = ["vendor/gpui-base", "vendor/gpui-fast"]
 default-members = ["crates/git", "crates/app"]
 
 [workspace.package]
@@ -14,9 +15,9 @@ rust-version = "1.97"
 # internal
 switchhead-git = { path = "crates/git" }
 
-# UI: the same facade and versions as Switchyard (gpui-pre =0.3.8 + gpui-component 0.7.1,
-# kept in lockstep). See docs/DECISIONS.md.
-gpui-kit = { version = "=0.7.1", features = ["tree-sitter-languages"] }
+# UI: GPUI Kit 0.7.3 (gpui-pre 0.3.9 snapshot names + gpui-component 0.7.3, kept in
+# lockstep), on the application-patched GPUI Fast stack below. See docs/DECISIONS.md.
+gpui-kit = { version = "=0.7.3", features = ["tree-sitter-languages"] }
 
 # Git reads (log, refs, status, diff). Writes go through the system `git` binary.
 gix = { version = "0.89", default-features = false, features = [
@@ -66,11 +67,17 @@ opt-level = 2
 lto = "thin"
 codegen-units = 1
 
-# gpui-fast (Retained Mode rendering) in place of GPUI Kit's upstream `gpui-pre` snapshots,
-# pinned to the same rev as Switchyard. See docs/DECISIONS.md.
+# GPUI Kit 0.7.3 on the application-patched GPUI Fast stack, the same vendored snapshot as
+# AgentOpsChat. Local facades keep Kit, Component and Base on one native core; see
+# vendor/gpui-fast/compat/README.md and docs/DECISIONS.md.
 [patch.crates-io]
-gpui-pre = { git = "https://github.com/longbridge/gpui-fast", rev = "598306fcbf77bff0f764b5a178a447344e72e132" }
-gpui-pre-platform = { git = "https://github.com/longbridge/gpui-fast", rev = "598306fcbf77bff0f764b5a178a447344e72e132" }
-gpui-pre-macros = { git = "https://github.com/longbridge/gpui-fast", rev = "598306fcbf77bff0f764b5a178a447344e72e132" }
-gpui-pre-sum-tree = { git = "https://github.com/longbridge/gpui-fast", rev = "598306fcbf77bff0f764b5a178a447344e72e132" }
-gpui-pre-web = { git = "https://github.com/longbridge/gpui-fast", rev = "598306fcbf77bff0f764b5a178a447344e72e132" }
+gpui-base = { path = "vendor/gpui-base" }
+gpui-pre = { path = "vendor/gpui-fast/compat/gpui-pre" }
+gpui-pre-platform = { path = "vendor/gpui-fast/compat/gpui-pre-platform" }
+gpui-pre-macros = { path = "vendor/gpui-fast/compat/gpui-pre-macros" }
+gpui-pre-sum-tree = { path = "vendor/gpui-fast/compat/gpui-pre-sum-tree" }
+gpui-pre-web = { path = "vendor/gpui-fast/compat/gpui-pre-web" }
+
+[patch."https://github.com/longbridge/gpui-fast"]
+gpui = { path = "vendor/gpui-fast/crates/gpui" }
+gpui_linux = { path = "vendor/gpui-fast/crates/gpui_linux" }
