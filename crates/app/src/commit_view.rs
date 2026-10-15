@@ -64,6 +64,17 @@ pub struct RunCustom {
     pub rev: Oid,
 }
 
+/// The user asked to open a file of the shown commit in another application.
+pub struct CommitExternal {
+    pub kind: crate::external::ExternalKind,
+    /// The file's path in `rev`.
+    pub path: PathBuf,
+    /// What the commit's changes are shown against (`None`: a root commit).
+    pub base: Option<Oid>,
+    /// The commit shown.
+    pub rev: Oid,
+}
+
 /// The details pane.
 pub struct CommitView {
     repo: Repo,
@@ -97,6 +108,7 @@ pub struct CommitView {
 impl EventEmitter<Navigate> for CommitView {}
 impl EventEmitter<OpenFile> for CommitView {}
 impl EventEmitter<RunCustom> for CommitView {}
+impl EventEmitter<CommitExternal> for CommitView {}
 
 impl CommitView {
     /// An empty pane for `repo`.
@@ -920,12 +932,28 @@ fn file_menu(
     };
     let path = f.path.clone();
     let deleted = f.status == diff::FileStatus::Deleted;
+    let base = v.info.as_ref().and_then(|i| i.diff_base);
     let open = |blame: bool| {
         let (view, path) = (view.clone(), path.clone());
         move |_: &gpui_kit::ClickEvent, _: &mut Window, cx: &mut App| {
             let path = path.clone();
             let _ = view.update(cx, |_, cx| cx.emit(OpenFile { path, rev, blame }));
         }
+    };
+    use crate::external::ExternalKind;
+    let external = |label: &'static str, kind: ExternalKind| {
+        let (view, path) = (view.clone(), path.clone());
+        PopupMenuItem::new(label).on_click(move |_, _, cx| {
+            let path = path.clone();
+            let _ = view.update(cx, |_, cx| {
+                cx.emit(CommitExternal {
+                    kind,
+                    path,
+                    base,
+                    rev,
+                })
+            });
+        })
     };
     let text = path.to_string_lossy().into_owned();
     let menu = menu
@@ -935,6 +963,14 @@ fn file_menu(
                 .disabled(deleted)
                 .on_click(open(true)),
         )
+        .separator()
+        .separator()
+        .item(external(
+            "Open in External Diff Tool",
+            ExternalKind::DiffTool,
+        ))
+        .item(external("Open in Editor", ExternalKind::Editor).disabled(deleted))
+        .item(external("Show in File Manager", ExternalKind::FileManager))
         .separator()
         .item(PopupMenuItem::new("Copy Path").on_click(move |_, _, cx| {
             cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));

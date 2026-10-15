@@ -133,8 +133,9 @@ impl MergeView {
     fn load(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let repo = self.repo.clone();
         let full = repo.root().join(&self.path);
+        let chosen = external_merge_tool(cx);
         let task = cx.background_executor().spawn(async move {
-            let tool = repo.merge_tool();
+            let tool = chosen.or_else(|| repo.merge_tool());
             let bytes = std::fs::read(&full);
             (tool, bytes)
         });
@@ -396,9 +397,10 @@ impl MergeView {
         self.error = None;
         let repo = self.repo.clone();
         let path = self.path.clone();
+        let tool = external_merge_tool(cx);
         let task = cx
             .background_executor()
-            .spawn(async move { repo.run_merge_tool(&path) });
+            .spawn(async move { repo.run_merge_tool(tool.as_deref(), &path) });
         cx.spawn_in(window, async move |this, cx| {
             let res = task.await;
             let _ = this.update_in(cx, |v, window, cx| {
@@ -912,6 +914,12 @@ impl Render for MergeView {
             })
             .child(body)
     }
+}
+
+/// The merge tool chosen in Settings → External Tools, if any.
+fn external_merge_tool(cx: &gpui_kit::App) -> Option<String> {
+    cx.try_global::<crate::external::ExternalTools>()
+        .and_then(|t| t.merge_tool().map(str::to_owned))
 }
 
 #[cfg(test)]

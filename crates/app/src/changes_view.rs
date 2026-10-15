@@ -118,6 +118,14 @@ pub enum ChangesEvent {
         /// The file.
         path: std::path::PathBuf,
     },
+    /// Open a file in another application.
+    OpenExternal {
+        kind: crate::external::ExternalKind,
+        /// The file.
+        path: std::path::PathBuf,
+        /// For the diff tool: the staged changes (else the unstaged ones).
+        staged: bool,
+    },
     /// Lock (`true`) or unlock a file with LFS.
     LfsLock {
         /// The file.

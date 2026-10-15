@@ -319,7 +319,14 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
       throwaway commit in a temp object folder). Commit details check signed commits with
       `git show --format=%G?` (Verified / Unverified / Bad / Signed). Deferred: badges in
       graph rows, verifying signed tags.
-- [ ] M6-9 Open in terminal / editor / file manager; external diff and merge tools.
+- [x] M6-9 Open in terminal / editor / file manager; external diff and merge tools.
+      Settings → External Tools (terminal and editor command lines with `{path}`, automatic
+      when empty; diff and merge tool names passed as `--tool`). Toolbar Terminal, the
+      Commands menu and the palette open the repository; file menus in Local Changes and
+      commit details open a file in the editor, the file manager (GPUI `reveal_path`) or
+      `git difftool` (unstaged, staged, or the commit against its parent). The merge
+      helper uses the chosen merge tool. Not checked under Xvfb: the file manager (no
+      portal there).
 - [ ] M6-10 Bisect UI (good / bad / skip, highlighted in the graph), guided: a step panel
       with the current candidate, steps left and the remaining range, ending on the first
       bad commit.
