@@ -18,6 +18,8 @@ pub mod diff;
 pub mod discover;
 pub mod flow;
 pub mod graph;
+#[cfg(test)]
+mod hang_probe;
 pub mod identity;
 pub mod lfs;
 pub mod log;
