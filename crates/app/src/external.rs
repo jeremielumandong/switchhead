@@ -252,7 +252,7 @@ mod tests {
             "echo 'no such editor' >&2; exit 3",
             &file,
             dir.path(),
-            true,
+            false,
             Duration::from_secs(5),
         )
         .unwrap_err();
