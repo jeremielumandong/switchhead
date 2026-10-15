@@ -15,6 +15,7 @@ pub mod commit;
 pub mod conflict;
 pub mod diff;
 pub mod discover;
+pub mod flow;
 pub mod graph;
 pub mod identity;
 pub mod lfs;

@@ -286,7 +286,11 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
       HEAD; default folder `<repo>-<branch>` beside the repo; opens in a tab when done) from
       the palette, the Worktrees menu and a branch's "Check Out in New Worktree…"; Remove…
       (optional force), Lock / Unlock, Prune; `RepoView::run_op_then` runs a step on success.
-- [ ] M6-4 Git-flow (init, start/finish feature, release, hotfix).
+- [x] M6-4 Git-flow (init, start/finish feature, release, hotfix).
+      Landed: `git::flow` (plain git, git-flow's config keys; see DECISIONS) with a toolbar
+      Git-flow menu (Initialize / Start Feature, Release, Hotfix / Finish current / Settings),
+      Finish on a flow branch's sidebar menu, and palette commands. Finishing again after a
+      conflict carries on. Deferred: push after finish, support and bugfix branches.
 - [ ] M6-5 Custom commands (user-defined, with variables like `${ref}` `${sha}` `${file}`).
 - [ ] M6-6 Hosting accounts (GitHub, GitLab, Bitbucket, Azure DevOps): clone from account,
       create pull request, avatars.

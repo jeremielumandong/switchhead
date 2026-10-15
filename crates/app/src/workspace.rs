@@ -8,6 +8,8 @@
 use std::path::{Path, PathBuf};
 
 use gpui_kit::component::TitleBar;
+use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::menu::DropdownMenu as _;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -509,6 +511,7 @@ impl Workspace {
                 Some(ToolbarOp::Branch),
                 cx,
             ))
+            .child(self.render_flow_tool(p, busy))
             .child(div().flex_1())
             .child(tool(
                 "tool-refresh",
@@ -534,6 +537,50 @@ impl Workspace {
                 Some(ToolbarOp::Helper),
                 cx,
             ))
+            .into_any_element()
+    }
+
+    /// The Git-flow tool: a menu to set it up, or start and finish branches.
+    fn render_flow_tool(&self, p: &Palette, busy: bool) -> AnyElement {
+        let view = self.active_repo().map(|v| v.downgrade());
+        let color = if view.is_some() && !busy {
+            p.fg2
+        } else {
+            p.fg3.opacity(0.6)
+        };
+        let content = div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap(rpx(2.))
+            .text_size(ts::CAPTION)
+            .text_color(color)
+            .child(
+                svg()
+                    .path("icons/sh-git-fork.svg")
+                    .size(rpx(17.))
+                    .text_color(color),
+            )
+            .child("Git-flow");
+        let Some(view) = view else {
+            return div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .w(rpx(52.))
+                .h(rpx(42.))
+                .child(content)
+                .into_any_element();
+        };
+        Button::new("tool-flow")
+            .ghost()
+            .w(rpx(52.))
+            .h(rpx(42.))
+            .px_0()
+            .child(content)
+            .tooltip("Start and finish features, releases and hotfixes")
+            .dropdown_menu(move |menu, _, cx| crate::repo_view::build_flow_menu(menu, &view, cx))
             .into_any_element()
     }
 

@@ -126,3 +126,16 @@ is re-read). Reads (access events), `.git/objects` and `*.lock` files are ignore
 OS refuses the watch (on Linux, a tree with more folders than
 `fs.inotify.max_user_watches`). Ignored folders (`target/`, `node_modules/`) still send
 events, so a build re-reads status about once a second; filtering them is a follow-up.
+
+## 2026-10-15 — Git-flow without the git-flow extension
+
+Like Fork, switchhead does git-flow with plain `git` (`switchhead_git::flow`) instead of
+calling the `git flow` extension, which most installs do not have. The settings go in the
+repository config under the extension's own keys (`gitflow.branch.master`,
+`gitflow.branch.develop`, `gitflow.prefix.feature|release|hotfix|versiontag`), so a
+repository set up by either tool works in the other. Finishing merges with `--no-ff`, tags
+releases and hotfixes (annotated, default message "Release 1.0"), merges a hotfix into a
+release branch in progress instead of develop (as git-flow does), and deletes the branch
+with `-d`. Each step is skipped when already done, so after a conflict the user resolves,
+commits and finishes again. Pushing after a finish, support branches and bugfix branches
+are left out.
