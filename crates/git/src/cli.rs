@@ -63,6 +63,7 @@ impl Cancel {
 
 /// Environment every command gets.
 fn base_env(cmd: &mut Command) {
+    no_window(cmd);
     cmd.env("GIT_TERMINAL_PROMPT", "0")
         // Stable, parseable output whatever the user's locale.
         .env("LC_ALL", "C")
@@ -72,6 +73,20 @@ fn base_env(cmd: &mut Command) {
         .env("GIT_PAGER", "cat")
         .env("GIT_OPTIONAL_LOCKS", "0")
         .stdin(Stdio::null());
+}
+
+/// On Windows, start a console program (git, `cmd`) without a console window. The app is
+/// a GUI-subsystem binary with no console of its own, so each child would otherwise open
+/// one that flashes on screen until it exits.
+pub fn no_window(cmd: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    let _ = cmd;
 }
 
 fn join_args<S: AsRef<OsStr>>(args: &[S]) -> String {
@@ -463,6 +478,7 @@ fn shell_command(script: &str) -> Command {
     let mut cmd = Command::new("cmd");
     // `/S /C "..."`: cmd strips the outer quotes and runs the rest as typed.
     cmd.raw_arg(format!("/S /C \"{script}\""));
+    no_window(&mut cmd);
     cmd
 }
 

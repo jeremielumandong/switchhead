@@ -268,3 +268,7 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
   tips before yielding, so an old tag as a tip makes the first batch walk almost the whole
   history even with a commit-graph (linux: 2.7 s with its tags, git's `--branches` 17 ms).
   `crates/git/examples/perf.rs` (and the Performance workflow) measures it.
+- Release builds on Windows are GUI-subsystem binaries, so every console child (git, `cmd`,
+  `taskkill`) opens its own console window that flashes until it exits. Start them with
+  `CREATE_NO_WINDOW` (`cli::no_window`, which `cli::Git` and custom commands already use);
+  their own children (ssh, hooks, credential helpers) inherit the hidden console.
