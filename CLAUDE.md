@@ -221,6 +221,11 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
 - The app reads `SWITCHHEAD_DATA` (data folder), `SWITCHHEAD_THEME` and `SWITCHHEAD_ZOOM`;
   screenshots: `Xvfb :99 &`, then `DISPLAY=:99 SWITCHHEAD_DATA=<tmp> switchhead <repo>` and
   `import -window root shot.png` (ImageMagick); `xdotool` drives clicks and keys.
+- A `claude` started from inside a Claude Code session (an app launched from one, for a
+  manual check) inherits its `CLAUDE_CODE_*` environment and reports that session's id, so
+  `--resume` then fails ("error_during_execution"). Launch the app with those variables
+  unset (every `CLAUDE*` variable, `env -u ...`) to check follow-ups. With a clean environment
+  Claude Code resumes from any working directory, so each run's fresh temp dir is fine.
 - Escape typed in a gpui-kit `Input` reaches containers as the app's global `actions::Dismiss`
   (bound with no context), not as a key-down or the input's own `Escape`: a bar that closes
   on Escape handles `Dismiss` (`repo_view/search.rs`).
