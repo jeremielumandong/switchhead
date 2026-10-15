@@ -803,14 +803,26 @@ impl Repo {
         Ok(())
     }
 
-    /// Mark the current commit; returns git's report (the next commit, or the culprit).
-    pub fn bisect_mark(&self, mark: BisectMark) -> Result<String> {
+    /// Mark `rev` (the current commit when `None`); returns git's report (the next
+    /// commit, or the culprit).
+    pub fn bisect_mark(&self, mark: BisectMark, rev: Option<&str>) -> Result<String> {
         let verb = match mark {
             BisectMark::Bad => "bad",
             BisectMark::Good => "good",
             BisectMark::Skip => "skip",
         };
-        Ok(self.run_git(vec![os("bisect"), os(verb)])?.text())
+        let mut args = vec![os("bisect"), os(verb)];
+        args.extend(rev.map(os));
+        match self.run_git(args) {
+            Ok(out) => Ok(out.text()),
+            // Exit code 2: only skipped commits are left; the session goes on.
+            Err(Error::Command {
+                code: Some(2),
+                message,
+                ..
+            }) if message.contains("only 'skip'ped commits left") => Ok(message),
+            Err(e) => Err(e),
+        }
     }
 
     /// End bisecting and return to where it started.
@@ -1279,7 +1291,7 @@ mod tests {
 
         r.bisect_start("HEAD", "HEAD~1").unwrap();
         assert_eq!(r.state(), RepoState::Bisect);
-        let report = r.bisect_mark(BisectMark::Bad).unwrap();
+        let report = r.bisect_mark(BisectMark::Bad, None).unwrap();
         assert!(report.contains("is the first"), "{report}");
         r.bisect_reset().unwrap();
         assert_eq!(r.state(), RepoState::Clean);

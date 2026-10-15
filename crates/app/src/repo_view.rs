@@ -27,7 +27,7 @@ use switchhead_git::cli::Cancel;
 use switchhead_git::flow::Kind;
 use switchhead_git::graph::{GraphRows, Node, Segment};
 use switchhead_git::log::{self, CommitLog, LogOptions, Scope, WalkStats};
-use switchhead_git::ops::DiffSides;
+use switchhead_git::ops::{BisectMark, DiffSides};
 use switchhead_git::refs::{self, Label, LabelKind, Refs};
 use switchhead_git::watch::{self, Fingerprint};
 use switchhead_git::{Oid, Repo, RepoState};
@@ -44,6 +44,7 @@ use crate::theme::{MONO, Palette, palette};
 use crate::ui;
 
 mod activity_panel;
+mod bisect_ops;
 mod branch_ops;
 mod commit_menu;
 mod custom_ops;
@@ -194,6 +195,8 @@ pub struct RepoView {
     /// A custom command a file list asked for, run at the next render (it may ask first,
     /// which needs the window).
     pending_custom: Option<(usize, custom_ops::CustomOn)>,
+    /// The bisect session, while one runs.
+    bisect: Option<std::rc::Rc<bisect_ops::BisectView>>,
     /// The interactive rebase editor, shown in place of the graph.
     rebase: Option<(Entity<crate::rebase_editor::RebaseEditor>, Subscription)>,
     details: Entity<CommitView>,
@@ -308,6 +311,7 @@ impl RepoView {
             reflog: None,
             refocus: false,
             pending_custom: None,
+            bisect: None,
             search: None,
             details,
             details_split: cx.new(|_| ResizableState::default()),
@@ -408,6 +412,7 @@ impl RepoView {
                 v.checking = false;
                 if v.state != state {
                     v.state = state;
+                    v.load_bisect(cx);
                     cx.notify();
                 }
                 // While a walk or an operation runs, its own reload covers the change;
@@ -621,6 +626,7 @@ impl RepoView {
                 }
                 self.rebuild_side();
                 self.sync_details(true, cx);
+                self.load_bisect(cx);
             }
             Msg::Batch(b) => {
                 if std::mem::take(fresh) {
@@ -1036,7 +1042,12 @@ impl RepoView {
         let merge = self.log.parents(i).len() > 1;
         let colors = graph_paint::colors(p);
         let selected = self.selected == Some(i);
-        let dim = self.search.as_ref().is_some_and(|s| s.dims(&id));
+        let bisect = self.bisect.as_ref();
+        let dim = self.search.as_ref().is_some_and(|s| s.dims(&id))
+            || bisect.is_some_and(|b| b.dims(&id));
+        let bisect_chip = bisect
+            .and_then(|b| b.mark(&id))
+            .map(|m| bisect_ops::row_chip(m, p));
         let graph = canvas(
             |_, _, _| {},
             move |bounds, _, window, _| {
@@ -1097,6 +1108,7 @@ impl RepoView {
                     .flex()
                     .items_center()
                     .gap(rpx(6.))
+                    .children(bisect_chip)
                     .children(labels)
                     .child(
                         div()
@@ -1381,6 +1393,20 @@ impl Render for RepoView {
             }))
             .on_action(cx.listener(|this, _: &actions::LfsPrune, _, cx| this.lfs_prune(cx)))
             .on_action(cx.listener(|this, _: &actions::ApplyPatch, w, cx| this.pick_patches(w, cx)))
+            .on_action(cx.listener(|this, _: &actions::StartBisect, w, cx| {
+                let good = this.selected.map(|i| this.log.id(i));
+                this.start_bisect_dialog(good, w, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::BisectGood, _, cx| {
+                this.bisect_mark(BisectMark::Good, None, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::BisectBad, _, cx| {
+                this.bisect_mark(BisectMark::Bad, None, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::BisectSkip, _, cx| {
+                this.bisect_mark(BisectMark::Skip, None, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::StopBisect, _, cx| this.stop_bisect(cx)))
             .on_action(cx.listener(|this, _: &actions::OpenInTerminal, _, cx| {
                 this.open_external(ExternalKind::Terminal, PathBuf::new(), None, cx)
             }))
@@ -1420,6 +1446,7 @@ impl Render for RepoView {
                     .flex()
                     .flex_col()
                     .children(self.render_banner(&p, window, cx))
+                    .children(self.render_bisect_panel(&p, cx))
                     .child(self.render_mode(&p, rem, cx))
                     .when(self.activity_open, |d| {
                         d.child(self.render_activity(&p, cx))

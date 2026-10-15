@@ -9,6 +9,7 @@
 //!
 //! Nothing here touches a UI: callers run these functions off the UI thread.
 
+pub mod bisect;
 pub mod blame;
 pub mod cli;
 pub mod commit;
