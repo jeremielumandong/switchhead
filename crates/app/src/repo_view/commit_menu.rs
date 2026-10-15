@@ -211,6 +211,8 @@ pub(super) fn build_commit_menu(
             v.state.command().is_some(),
         )
     };
+    let bisecting = v.read(cx).state == switchhead_git::RepoState::Bisect;
+    let clean = v.read(cx).state == switchhead_git::RepoState::Clean;
     let act = |f: Box<ViewAction>| {
         let view = view.clone();
         move |_: &gpui_kit::ClickEvent, window: &mut Window, cx: &mut App| {
@@ -292,6 +294,33 @@ pub(super) fn build_commit_menu(
                 v.open_rebase_editor(id, rebase_summary.clone(), w, cx)
             }))),
     );
+    menu = menu.separator();
+    menu = if bisecting {
+        use switchhead_git::ops::BisectMark;
+        let mark = |label: &'static str, m: BisectMark| {
+            PopupMenuItem::new(label)
+                .disabled(busy)
+                .on_click(act(Box::new(move |v, _, cx| {
+                    v.bisect_mark(m, Some(id), cx)
+                })))
+        };
+        menu.item(mark("Bisect: Mark as Bad", BisectMark::Bad))
+            .item(mark("Bisect: Mark as Good", BisectMark::Good))
+            .item(mark("Bisect: Skip This Commit", BisectMark::Skip))
+            .item(
+                PopupMenuItem::new("Stop Bisect")
+                    .disabled(busy)
+                    .on_click(act(Box::new(|v, _, cx| v.stop_bisect(cx)))),
+            )
+    } else {
+        menu.item(
+            PopupMenuItem::new("Start Bisect…")
+                .disabled(busy || !clean)
+                .on_click(act(Box::new(move |v, w, cx| {
+                    v.start_bisect_dialog(Some(id), w, cx)
+                }))),
+        )
+    };
     let full = id.to_string();
     let short_s = short.clone();
     menu = menu

@@ -327,9 +327,16 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
       `git difftool` (unstaged, staged, or the commit against its parent). The merge
       helper uses the chosen merge tool. Not checked under Xvfb: the file manager (no
       portal there).
-- [ ] M6-10 Bisect UI (good / bad / skip, highlighted in the graph), guided: a step panel
+- [x] M6-10 Bisect UI (good / bad / skip, highlighted in the graph), guided: a step panel
       with the current candidate, steps left and the remaining range, ending on the first
       bad commit.
+      Start Bisect… (commit menu, palette) asks for a bad and a good commit; the panel
+      above the graph shows the tested commit, commits and steps left, Good / Bad / Skip /
+      Stop, then "First bad commit" with Show and Finish (or the skipped-only case). The
+      graph marks good / bad / skipped / first bad and dims commits outside the range.
+      `git::bisect` reads `refs/bisect/*` in process and the range with one `rev-list`, so
+      a session started on the command line shows too. Any commit can be marked from its
+      menu.
 
 ## M7 — Release
 
