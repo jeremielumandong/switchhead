@@ -14,7 +14,7 @@ macro_rules! icons {
     };
 }
 
-const ICONS: [(&str, &[u8]); 15] = icons!(
+const ICONS: [(&str, &[u8]); 16] = icons!(
     "archive",
     "archive-restore",
     "arrow-down",
@@ -27,6 +27,7 @@ const ICONS: [(&str, &[u8]); 15] = icons!(
     "git-commit-horizontal",
     "git-fork",
     "git-merge",
+    "lock",
     "refresh-cw",
     "sliders-horizontal",
     "tag",

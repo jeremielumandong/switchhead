@@ -17,6 +17,7 @@ pub mod diff;
 pub mod discover;
 pub mod graph;
 pub mod identity;
+pub mod lfs;
 pub mod log;
 pub mod ops;
 pub mod rebase;

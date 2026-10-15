@@ -332,6 +332,30 @@ pub(super) fn build_ref_menu(
             let _ = view.update(cx, |v, cx| f(v, window, cx));
         }
     };
+    if let Target::LfsLock(path) = &target {
+        let busy = v.read(cx).busy();
+        let (unlock, force) = (path.clone(), path.clone());
+        let text = path.to_string_lossy().into_owned();
+        return menu
+            .item(
+                PopupMenuItem::new("Unlock")
+                    .disabled(busy)
+                    .on_click(act(Box::new(move |v, _, cx| {
+                        v.lfs_unlock(unlock.clone(), cx)
+                    }))),
+            )
+            .item(
+                PopupMenuItem::new("Force Unlock…")
+                    .disabled(busy)
+                    .on_click(act(Box::new(move |v, w, cx| {
+                        v.lfs_force_unlock(force.clone(), w, cx)
+                    }))),
+            )
+            .separator()
+            .item(PopupMenuItem::new("Copy Path").on_click(move |_, _, cx| {
+                cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text.clone()))
+            }));
+    }
     if let (Target::Stash(index), Some(id)) = (&target, id) {
         return super::stash_ops::build_stash_menu(menu, *index, id, &act, view, cx);
     }
