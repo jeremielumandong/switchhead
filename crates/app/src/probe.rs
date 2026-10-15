@@ -96,7 +96,7 @@ pub fn start(cx: &mut Context<RepoView>) {
             "probe done at {} ms",
             started.elapsed().as_millis()
         ));
-        let _ = cx.update(|cx| cx.quit());
+        cx.update(|cx| cx.quit());
     })
     .detach();
 }
