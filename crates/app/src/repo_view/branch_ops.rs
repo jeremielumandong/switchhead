@@ -579,6 +579,12 @@ pub(super) fn build_ref_menu(
                     PopupMenuItem::new(format!("Push {b}"))
                         .on_click(act(Box::new(move |v, _, cx| v.push_branch(b3.clone(), cx)))),
                 );
+                let b5 = b.clone();
+                menu = menu.item(PopupMenuItem::new("Create Pull Request…").on_click(act(
+                    Box::new(move |v, window, cx| {
+                        v.create_pull_request(Some(b5.clone()), window, cx)
+                    }),
+                )));
                 let view_u = view.clone();
                 let branch = b.clone();
                 menu = menu.submenu("Set Upstream", window, cx, move |mut m, _, _| {

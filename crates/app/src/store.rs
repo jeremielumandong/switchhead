@@ -77,6 +77,8 @@ pub struct State {
     pub assistant: crate::assistant::AssistantSettings,
     /// The user's custom commands.
     pub custom_commands: crate::custom_commands::CustomCommands,
+    /// Hosting accounts (their tokens are in the keychain, not here).
+    pub accounts: crate::accounts::Accounts,
 }
 
 /// A saved commit identity: name, email and optional signing key.

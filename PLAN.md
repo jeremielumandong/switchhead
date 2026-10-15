@@ -297,8 +297,15 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
       the graph's commit menu, the sidebar's branch and tag menu and both file lists' menus.
       `${repo} ${branch} ${sha} ${ref} ${file} ${remote}` are quoted when needed
       (`cli::run_shell`, see DECISIONS); output streams to the activity log.
-- [ ] M6-6 Hosting accounts (GitHub, GitLab, Bitbucket, Azure DevOps): clone from account,
+- [x] M6-6 Hosting accounts (GitHub, GitLab, Bitbucket, Azure DevOps): clone from account,
       create pull request, avatars.
+      Landed: `switchhead-hosting` (reqwest + keyring, see DECISIONS); Settings → Accounts…
+      signs in with a token (self-hosted GitHub / GitLab sites, Azure organization,
+      Bitbucket email), kept in the keychain; the Clone form lists each account's
+      repositories with a filter and HTTPS / SSH; Create Pull Request… (Commands menu,
+      branch menu, palette) creates it through the API with draft and target branch, or
+      opens the site's page without an account; author avatars in the commit details.
+      Deferred: OAuth sign-in, avatars in the graph's rows, PR lists/reviews.
 - [x] M6-7 Patches: create from commits, apply patch / `git am`.
       Landed: commit menu Save as Patch…, Save Patches from Here to HEAD… (numbered
       `format-patch` files; refuses commits off the current branch) and Copy as Patch;

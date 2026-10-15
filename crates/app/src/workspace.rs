@@ -57,6 +57,11 @@ pub struct Workspace {
         Entity<crate::custom_commands_view::CustomCommandsView>,
         gpui_kit::Subscription,
     )>,
+    /// Settings → Accounts, while open.
+    accounts: Option<(
+        Entity<crate::accounts_view::AccountsView>,
+        gpui_kit::Subscription,
+    )>,
     /// Move keyboard focus to the active tab on the next frame (it just changed).
     focus_tab: bool,
     /// A message for the status bar (an open that failed).
@@ -68,6 +73,7 @@ pub struct Workspace {
     _identities: gpui_kit::Subscription,
     _assistant: gpui_kit::Subscription,
     _custom_commands: gpui_kit::Subscription,
+    _accounts: gpui_kit::Subscription,
     /// Quick Launch, while open.
     palette: Option<(Entity<PaletteView>, gpui_kit::Subscription)>,
     _activation: gpui_kit::Subscription,
@@ -148,6 +154,15 @@ impl Workspace {
                     this.save(cx);
                 }
             });
+        let accounts = cx.observe_global::<crate::accounts::Accounts>(|this, cx| {
+            let m = cx.global::<crate::accounts::Accounts>();
+            if this.state.accounts != *m {
+                this.state.accounts = m.clone();
+                this.save(cx);
+                crate::accounts::forget_author_lookups(cx);
+                cx.notify();
+            }
+        });
         // Coming back to the window: pick up what changed in a terminal meanwhile.
         let activation = cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active()
@@ -167,6 +182,7 @@ impl Workspace {
             settings_open: false,
             assistant_settings: None,
             custom_commands: None,
+            accounts: None,
             focus_tab: false,
             notice: None,
             _save: None,
@@ -176,6 +192,7 @@ impl Workspace {
             _identities: identities,
             _assistant: assistant,
             _custom_commands: custom_commands,
+            _accounts: accounts,
             palette: None,
             _activation: activation,
             repo_subs: Vec::new(),
@@ -947,6 +964,23 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Open Settings → Accounts.
+    fn open_accounts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings_open = false;
+        if self.accounts.is_none() {
+            let view = cx.new(|cx| crate::accounts_view::AccountsView::new(window, cx));
+            let sub = cx.subscribe(&view, |this, _, ev, cx| match ev {
+                crate::accounts_view::AccountsEvent::Close => {
+                    this.accounts = None;
+                    this.focus_tab = true;
+                    cx.notify();
+                }
+            });
+            self.accounts = Some((view, sub));
+        }
+        cx.notify();
+    }
+
     fn render_settings(&self, p: &Palette, cx: &mut Context<Self>) -> AnyElement {
         let current = palette(cx).id;
         let zoom = appearance::zoom(cx);
@@ -1019,6 +1053,24 @@ impl Workspace {
                     .hover(|s| s.bg(p.hover))
                     .on_click(cx.listener(|this, _, w, cx| this.open_custom_commands(w, cx)))
                     .child(div().flex_1().child("Custom Commands…")),
+            )
+            .child(
+                div()
+                    .id("settings-accounts")
+                    .flex()
+                    .items_center()
+                    .h(rpx(26.))
+                    .px(rpx(6.))
+                    .rounded(px(5.))
+                    .cursor_pointer()
+                    .text_size(ts::UI)
+                    .hover(|s| s.bg(p.hover))
+                    .on_click(cx.listener(|this, _, w, cx| this.open_accounts(w, cx)))
+                    .child(div().flex_1().child("Accounts…"))
+                    .child(div().text_color(p.fg3).child(match accounts_count(cx) {
+                        0 => String::new(),
+                        n => n.to_string(),
+                    })),
             )
             .child(div().h(rpx(1.)).my(rpx(6.)).bg(p.bd))
             .child(
@@ -1362,6 +1414,9 @@ impl Render for Workspace {
                     this.open_assistant_settings(w, cx)
                 }),
             )
+            .on_action(
+                cx.listener(|this, _: &actions::ShowAccounts, w, cx| this.open_accounts(w, cx)),
+            )
             .on_action(cx.listener(|this, _: &actions::EditCustomCommands, w, cx| {
                 this.open_custom_commands(w, cx)
             }))
@@ -1385,6 +1440,7 @@ impl Render for Workspace {
                 this.settings_open = false;
                 this.assistant_settings = None;
                 this.custom_commands = None;
+                this.accounts = None;
                 this.manager.dismiss();
                 cx.notify();
             }))
@@ -1420,31 +1476,20 @@ impl Render for Workspace {
                 )
             })
             .when_some(self.custom_commands.as_ref(), |d, (view, _)| {
-                d.child(
-                    div()
-                        .id("custom-commands")
-                        .absolute()
-                        .inset_0()
-                        .occlude()
-                        .bg(p.scrim)
-                        .flex()
-                        .justify_center()
-                        .items_start()
-                        .pt(rpx(48.))
-                        .child(
-                            div()
-                                .id("custom-commands-card")
-                                .w(rpx(820.))
-                                .max_h(gpui_kit::relative(0.88))
-                                .overflow_y_scroll()
-                                .bg(p.elev)
-                                .border_1()
-                                .border_color(p.bd2)
-                                .rounded(px(10.))
-                                .shadow(ui::shadow(&p))
-                                .child(view.clone()),
-                        ),
-                )
+                d.child(settings_page(
+                    "custom-commands",
+                    820.,
+                    view.clone().into_any_element(),
+                    &p,
+                ))
+            })
+            .when_some(self.accounts.as_ref(), |d, (view, _)| {
+                d.child(settings_page(
+                    "accounts",
+                    640.,
+                    view.clone().into_any_element(),
+                    &p,
+                ))
             })
             .when_some(self.palette.as_ref(), |d, (view, _)| {
                 d.child(
@@ -1482,6 +1527,38 @@ pub(crate) fn is_open(ws: &Workspace, path: &Path, cx: &gpui_kit::App) -> bool {
 }
 
 /// The settings menu's hint for the assistant: the chosen CLI, or "Automatic".
+/// A settings page over the window: a scrim and a scrolling card `width` wide.
+fn settings_page(id: &'static str, width: f32, page: AnyElement, p: &Palette) -> impl IntoElement {
+    div()
+        .id(id)
+        .absolute()
+        .inset_0()
+        .occlude()
+        .bg(p.scrim)
+        .flex()
+        .justify_center()
+        .items_start()
+        .pt(rpx(48.))
+        .child(
+            div()
+                .id(SharedString::from(format!("{id}-card")))
+                .w(rpx(width))
+                .max_h(gpui_kit::relative(0.88))
+                .overflow_y_scroll()
+                .bg(p.elev)
+                .border_1()
+                .border_color(p.bd2)
+                .rounded(px(10.))
+                .shadow(ui::shadow(p))
+                .child(page),
+        )
+}
+
+fn accounts_count(cx: &gpui_kit::App) -> usize {
+    cx.try_global::<crate::accounts::Accounts>()
+        .map_or(0, |a| a.0.len())
+}
+
 fn assistant_label(cx: &gpui_kit::App) -> &'static str {
     match cx.global::<crate::assistant::AssistantSettings>().agent {
         Some(k) => k.display_name(),

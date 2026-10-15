@@ -1,8 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["crates/git", "crates/agents", "crates/mcp", "crates/app"]
+members = ["crates/git", "crates/hosting", "crates/agents", "crates/mcp", "crates/app"]
 exclude = ["vendor/gpui-base", "vendor/gpui-fast"]
-default-members = ["crates/git", "crates/agents", "crates/mcp", "crates/app"]
+default-members = ["crates/git", "crates/hosting", "crates/agents", "crates/mcp", "crates/app"]
 
 [workspace.package]
 version = "0.0.1"
@@ -14,6 +14,7 @@ rust-version = "1.97"
 [workspace.dependencies]
 # internal
 switchhead-git = { path = "crates/git" }
+switchhead-hosting = { path = "crates/hosting" }
 switchhead-mcp = { path = "crates/mcp" }
 switchhead-agents = { path = "crates/agents" }
 
@@ -37,6 +38,16 @@ notify = "8.2"
 
 # Channels from worker threads to the UI (the sync primitives only; no runtime).
 tokio = { version = "1", default-features = false, features = ["sync"] }
+
+# Hosting accounts: HTTPS to the GitHub / GitLab / Bitbucket / Azure DevOps APIs (rustls
+# with ring and the system's roots, the stack gpui-kit's own reqwest fork already pulls
+# in) and tokens in the OS keychain. See docs/DECISIONS.md.
+reqwest = { version = "0.12", default-features = false, features = [
+    "blocking",
+    "json",
+    "rustls-tls-native-roots",
+] }
+keyring = "4.2"
 
 # serialization
 serde = { version = "1", features = ["derive"] }

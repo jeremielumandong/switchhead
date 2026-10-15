@@ -20,6 +20,8 @@ use crate::theme::{MONO, Palette, palette};
 use crate::ui;
 use crate::workspace::{Workspace, is_open};
 
+mod account_repos;
+
 /// A folder's repositories.
 pub struct FolderScan {
     /// The folder.
@@ -38,6 +40,8 @@ pub struct CloneForm {
     progress: SharedString,
     error: Option<SharedString>,
     cancel: Cancel,
+    /// Repositories of the signed-in accounts (`None` without accounts).
+    picker: Option<account_repos::AccountPicker>,
     _task: Option<Task<()>>,
 }
 
@@ -105,6 +109,7 @@ impl ManagerState {
             progress: SharedString::default(),
             error: None,
             cancel: Cancel::default(),
+            picker: account_repos::AccountPicker::new(window, cx),
             _task: None,
         });
         cx.notify();
@@ -321,6 +326,7 @@ impl Workspace {
                         .font_weight(FontWeight::SEMIBOLD)
                         .child("Clone a repository"),
                 )
+                .children(self.render_account_repos(p, cx))
                 .child(field("REPOSITORY URL", &f.url))
                 .child(
                     div()

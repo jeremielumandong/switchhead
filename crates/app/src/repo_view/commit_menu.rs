@@ -177,21 +177,7 @@ impl RepoView {
 
     /// The commit's page on the forge of the upstream's remote (or `origin`).
     fn commit_web_page(&self, id: Oid) -> Option<(web::Forge, String)> {
-        let upstream_remote = self
-            .refs
-            .current_branch()
-            .and_then(|b| b.tracking.as_ref())
-            .and_then(|t| t.upstream.split_once('/').map(|(r, _)| r.to_owned()));
-        let names = self.refs.remote_names();
-        let remote = upstream_remote
-            .or_else(|| {
-                names
-                    .iter()
-                    .find(|n| **n == "origin")
-                    .map(|n| (*n).to_owned())
-            })
-            .or_else(|| names.first().map(|n| (*n).to_owned()))?;
-        web::commit_page(self.refs.remote_url(&remote)?, &id.to_string())
+        web::commit_page(self.main_remote_url()?, &id.to_string())
     }
 }
 

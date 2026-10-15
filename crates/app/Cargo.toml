@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 switchhead-git.workspace = true
+switchhead-hosting.workspace = true
 switchhead-mcp.workspace = true
 switchhead-agents.workspace = true
 gpui-kit.workspace = true

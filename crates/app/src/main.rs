@@ -5,6 +5,8 @@
 
 extern crate gpui_kit as gpui;
 
+mod accounts;
+mod accounts_view;
 mod actions;
 mod activity;
 mod appearance;
@@ -150,6 +152,8 @@ fn main() -> Result<()> {
             cx.set_global(state.identities.clone());
             cx.set_global(state.assistant.clone());
             cx.set_global(state.custom_commands.clone());
+            cx.set_global(state.accounts.clone());
+            cx.set_global(accounts::Avatars::new(paths.data.join("avatars")));
             cx.set_global(image_diff::ImageView::default());
             let theme_key = std::env::var("SWITCHHEAD_THEME")
                 .ok()
