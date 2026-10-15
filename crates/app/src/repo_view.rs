@@ -23,6 +23,7 @@ use gpui_kit::{
     Window, canvas, div, px, uniform_list,
 };
 use switchhead_git::cli::Cancel;
+use switchhead_git::flow::Kind;
 use switchhead_git::graph::{GraphRows, Node, Segment};
 use switchhead_git::log::{self, CommitLog, LogOptions, Scope, WalkStats};
 use switchhead_git::refs::{self, Label, LabelKind, Refs};
@@ -43,6 +44,7 @@ mod activity_panel;
 mod branch_ops;
 mod commit_menu;
 mod file_history;
+mod flow_ops;
 mod form;
 mod lfs_ops;
 mod rebase;
@@ -57,6 +59,8 @@ mod tag_ops;
 mod tree;
 mod undo;
 mod worktree_ops;
+
+pub(crate) use flow_ops::build_flow_menu;
 
 use sidebar::{Section, SideRow};
 
@@ -1279,6 +1283,23 @@ impl Render for RepoView {
             .on_action(
                 cx.listener(|this, _: &actions::PruneWorktrees, _, cx| this.prune_worktrees(cx)),
             )
+            .on_action(
+                cx.listener(|this, _: &actions::GitFlowSettings, w, cx| {
+                    this.flow_init_dialog(w, cx)
+                }),
+            )
+            .on_action(cx.listener(|this, _: &actions::StartFeature, w, cx| {
+                this.flow_start_dialog(Kind::Feature, w, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::StartRelease, w, cx| {
+                this.flow_start_dialog(Kind::Release, w, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::StartHotfix, w, cx| {
+                this.flow_start_dialog(Kind::Hotfix, w, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::FinishFlowBranch, w, cx| {
+                this.flow_finish_current(w, cx)
+            }))
             .on_action(cx.listener(|this, _: &actions::UpdateSubmodules, _, cx| {
                 this.update_submodules(Vec::new(), true, cx)
             }))

@@ -130,6 +130,8 @@ pub struct Refs {
     /// Remotes in the config (`git remote -v`) with their fetch URLs, including ones never
     /// fetched; filled by [`load_tracking`].
     pub configured_remotes: Vec<(String, String)>,
+    /// Git-flow settings, `None` when it is not set up; filled by [`load_tracking`].
+    pub flow: Option<crate::flow::Config>,
 }
 
 impl Refs {
@@ -285,7 +287,7 @@ fn stashes(r: &gix::Repository) -> Result<Vec<Stash>> {
 }
 
 /// Fill each branch's upstream and ahead/behind counts with one `git for-each-ref`, and
-/// the worktrees and submodules (these are best effort: a failure leaves them empty).
+/// the worktrees, submodules and git-flow settings (these are best effort: a failure leaves them empty).
 pub fn load_tracking(repo: &Repo, refs: &mut Refs) -> Result<()> {
     refs.worktrees = crate::worktrees::list_worktrees(repo).unwrap_or_else(|e| {
         tracing::debug!(error = %e, "worktrees unavailable");
@@ -301,6 +303,10 @@ pub fn load_tracking(repo: &Repo, refs: &mut Refs) -> Result<()> {
     refs.submodules = crate::worktrees::list_submodules(repo).unwrap_or_else(|e| {
         tracing::debug!(error = %e, "submodules unavailable");
         Vec::new()
+    });
+    refs.flow = crate::flow::read(repo).unwrap_or_else(|e| {
+        tracing::debug!(error = %e, "git-flow settings unavailable");
+        None
     });
     let out = repo.git()?.run(&[
         "for-each-ref",

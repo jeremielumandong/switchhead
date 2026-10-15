@@ -544,6 +544,22 @@ pub(super) fn build_ref_menu(
                         v.add_worktree_dialog(Some(b6.clone()), window, cx)
                     }))),
             );
+            let flow = v
+                .read(cx)
+                .refs
+                .flow
+                .as_ref()
+                .and_then(|f| f.classify(b))
+                .map(|(k, n)| (k, n.to_owned()));
+            if let Some((kind, flow_name)) = flow {
+                menu = menu.item(
+                    PopupMenuItem::new(format!("Finish {} {flow_name}…", kind.label()))
+                        .disabled(v.read(cx).busy())
+                        .on_click(act(Box::new(move |v, window, cx| {
+                            v.flow_finish_dialog(kind, flow_name.clone(), window, cx)
+                        }))),
+                );
+            }
             let b4 = b.clone();
             menu = menu.item(PopupMenuItem::new("Show Reflog").on_click(act(Box::new(
                 move |v, window, cx| v.open_reflog(b4.clone(), window, cx),
