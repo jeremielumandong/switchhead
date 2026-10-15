@@ -42,6 +42,8 @@ pub enum Section {
     Submodules,
     /// Worktrees.
     Worktrees,
+    /// Git LFS file locks.
+    LfsLocks,
 }
 
 impl Section {
@@ -53,6 +55,7 @@ impl Section {
             Section::Stashes => "Stashes",
             Section::Submodules => "Submodules",
             Section::Worktrees => "Worktrees",
+            Section::LfsLocks => "LFS Locks",
         }
     }
 
@@ -64,6 +67,7 @@ impl Section {
             Section::Stashes => "icons/sh-archive.svg",
             Section::Submodules => "icons/sh-folder-git-2.svg",
             Section::Worktrees => "icons/sh-git-fork.svg",
+            Section::LfsLocks => "icons/sh-lock.svg",
         }
     }
 }
@@ -81,6 +85,8 @@ pub enum Target {
     Stash(usize),
     /// Open a folder (a worktree or submodule) in a tab.
     Open(PathBuf),
+    /// An LFS lock on this path.
+    LfsLock(PathBuf),
     /// Nothing (the current worktree, an uninitialized submodule).
     None,
 }
@@ -151,6 +157,7 @@ impl RepoView {
             Section::Stashes,
             Section::Submodules,
             Section::Worktrees,
+            Section::LfsLocks,
         ] {
             let leaves: Vec<Leaf> = self
                 .section_leaves(section)
@@ -206,7 +213,11 @@ impl RepoView {
                         }
                     }
                 }
-                Section::Tags | Section::Stashes | Section::Submodules | Section::Worktrees => {
+                Section::Tags
+                | Section::Stashes
+                | Section::Submodules
+                | Section::Worktrees
+                | Section::LfsLocks => {
                     rows.extend(leaves.into_iter().map(|l| l.row(None, 0)));
                 }
             }
@@ -256,6 +267,7 @@ impl RepoView {
     fn section_leaves(&self, section: Section) -> Vec<Leaf> {
         let r = &self.refs;
         match section {
+            Section::LfsLocks => self.lfs_leaves(),
             Section::Branches => r
                 .branches
                 .iter()
@@ -380,6 +392,29 @@ impl RepoView {
         }
     }
 
+    /// The LFS locks section's entries (none until LFS is detected and locks are read).
+    fn lfs_leaves(&self) -> Vec<Leaf> {
+        if !self.lfs.used {
+            return Vec::new();
+        }
+        self.lfs
+            .locks
+            .iter()
+            .map(|l| {
+                let path = l.path.to_string_lossy().into_owned();
+                Leaf {
+                    text: path.clone().into(),
+                    name: format!("{path} {}", l.owner.as_deref().unwrap_or("")),
+                    id: None,
+                    detail: l.owner.clone().map(SharedString::from),
+                    current: false,
+                    rev: None,
+                    target: Target::LfsLock(l.path.clone()),
+                }
+            })
+            .collect()
+    }
+
     pub(super) fn toggle_section(&mut self, s: Section, cx: &mut Context<Self>) {
         if !self.collapsed.remove(&s) {
             self.collapsed.insert(s);
@@ -446,6 +481,8 @@ impl RepoView {
             }
             Target::Tag(name) => self.confirm_tag_checkout(name, window, cx),
             Target::Open(path) => cx.emit(RepoViewEvent::Open(path)),
+            // A locked file: its history.
+            Target::LfsLock(path) => self.open_file_view(path, None, false, cx),
             Target::Stash(_) | Target::None => {}
         }
     }

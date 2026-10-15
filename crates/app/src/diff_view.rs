@@ -59,6 +59,12 @@ pub(crate) enum Content {
         old: Option<Oid>,
         new: Option<Oid>,
     },
+    /// An LFS file whose object (on at least one side) is not downloaded: each side's
+    /// size, and whether it is in the local store.
+    Lfs {
+        old: Option<(u64, bool)>,
+        new: Option<(u64, bool)>,
+    },
     Failed(String),
 }
 
@@ -141,6 +147,42 @@ impl Content {
         }
     }
 
+    /// [`Content::from_bytes`] looking through LFS pointers: a side whose object is in
+    /// the local store is diffed as its real content; when one is not downloaded, the
+    /// file shows as [`Content::Lfs`].
+    pub(crate) fn from_sides(
+        repo: &switchhead_git::Repo,
+        path: &Path,
+        old: Option<Vec<u8>>,
+        new: Option<Vec<u8>>,
+        prefs: &DiffPrefs,
+        theme: &Arc<HighlightTheme>,
+    ) -> Self {
+        use switchhead_git::lfs::Side;
+        let old = old.map(|b| repo.lfs_side(b));
+        let new = new.map(|b| repo.lfs_side(b));
+        let missing = |s: &Option<Side>| matches!(s, Some(Side::Missing(_)));
+        if missing(&old) || missing(&new) {
+            let info = |s: Option<Side>| {
+                s.map(|s| match s {
+                    Side::Missing(p) => (p.size, false),
+                    Side::Content(b) => (b.len() as u64, true),
+                })
+            };
+            return Content::Lfs {
+                old: info(old),
+                new: info(new),
+            };
+        }
+        fn bytes(s: &Option<Side>) -> Option<&[u8]> {
+            match s {
+                Some(Side::Content(b)) => Some(b.as_slice()),
+                _ => None,
+            }
+        }
+        Self::from_bytes(path, bytes(&old), bytes(&new), prefs, theme)
+    }
+
     /// Added and removed line counts of a text diff.
     pub(crate) fn stats(&self) -> Option<(usize, usize)> {
         match self {
@@ -205,6 +247,7 @@ pub(crate) fn body(
             format!("File too large to show ({})", sizes(*old, *new)),
             p.fg3,
         ),
+        Content::Lfs { old, new } => message(lfs_note(*old, *new), p.fg3),
         Content::Submodule { old, new } => message(
             format!(
                 "Submodule {} → {}",
@@ -664,6 +707,20 @@ pub(crate) fn sizes(old: Option<u64>, new: Option<u64>) -> String {
     }
 }
 
+/// The note for an LFS file that cannot be compared yet.
+fn lfs_note(old: Option<(u64, bool)>, new: Option<(u64, bool)>) -> String {
+    let sizes = sizes(old.map(|s| s.0), new.map(|s| s.0));
+    let which = match (old, new) {
+        (Some((_, false)), Some((_, false))) | (None, _) | (_, None) => "is",
+        (Some((_, false)), _) => "before this change is",
+        _ => "after this change is",
+    };
+    format!(
+        "LFS file ({sizes}). Its content {which} not downloaded: run Fetch LFS Objects \
+         (this branch) or Fetch All LFS Objects (every commit), then select the file again."
+    )
+}
+
 /// How much a file grew or shrank (" , +1.2 KB"), when both sizes are known and differ.
 pub(crate) fn growth(old: Option<u64>, new: Option<u64>) -> String {
     match (old, new) {
@@ -676,6 +733,16 @@ pub(crate) fn growth(old: Option<u64>, new: Option<u64>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explains_missing_lfs_content() {
+        assert!(
+            lfs_note(None, Some((2048, false)))
+                .starts_with("LFS file (2.0 KB). Its content is not")
+        );
+        assert!(lfs_note(Some((1, false)), Some((2, true))).contains("before this change is not"));
+        assert!(lfs_note(Some((1, true)), Some((2, false))).contains("after this change is not"));
+    }
 
     #[test]
     fn formats_growth() {

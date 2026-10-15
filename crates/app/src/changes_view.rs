@@ -57,6 +57,8 @@ struct Shown {
 /// The Local Changes view of a repository tab.
 pub struct ChangesView {
     repo: Repo,
+    /// The repository uses LFS (the menu offers Lock / Unlock), and the locked paths.
+    lfs: Option<std::collections::HashSet<PathBuf>>,
     status: Rc<Status>,
     lists: Lists,
     /// Paths of each list, in order (what [`Selection`] works on).
@@ -105,6 +107,13 @@ pub enum ChangesEvent {
         /// Blame (else history).
         blame: bool,
     },
+    /// Lock (`true`) or unlock a file with LFS.
+    LfsLock {
+        /// The file.
+        path: std::path::PathBuf,
+        /// Lock, else unlock.
+        lock: bool,
+    },
 }
 
 impl gpui_kit::EventEmitter<ChangesEvent> for ChangesView {}
@@ -129,6 +138,7 @@ impl ChangesView {
             reading: false,
             reread: false,
             busy: false,
+            lfs: None,
             error: None,
             unstaged_scroll: UniformListScrollHandle::new(),
             staged_scroll: UniformListScrollHandle::new(),
@@ -959,6 +969,20 @@ impl ChangesView {
     }
 }
 
+impl ChangesView {
+    /// Whether the repository uses LFS, and which paths are locked (`None`: no LFS).
+    pub fn set_lfs(
+        &mut self,
+        locked: Option<std::collections::HashSet<PathBuf>>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.lfs != locked {
+            self.lfs = locked;
+            cx.notify();
+        }
+    }
+}
+
 /// The diff of one entry on one side.
 fn local_diff(
     repo: &Repo,
@@ -991,7 +1015,9 @@ fn local_diff(
     };
     match res {
         Ok(files) => match files.into_iter().next() {
-            Some(f) if f.binary => (local_binary(repo, e, side, prefs, theme), None),
+            Some(f) if f.binary || is_lfs_patch(&f) => {
+                (local_binary(repo, e, side, prefs, theme), None)
+            }
             Some(f) => (Content::text(f.diff.clone(), &e.path, None, theme), Some(f)),
             None => (
                 Content::text(Default::default(), &e.path, None, theme),
@@ -1002,8 +1028,13 @@ fn local_diff(
     }
 }
 
-/// A binary file's two versions (index and work tree, or HEAD and index), for an image
-/// comparison or the binary file note.
+/// Whether git diffed LFS pointers (the file is stored with LFS).
+fn is_lfs_patch(f: &FilePatch) -> bool {
+    (0..f.diff.len()).any(|i| switchhead_git::lfs::is_pointer_diff_line(f.diff.text(i)))
+}
+
+/// A binary or LFS file's two versions (index and work tree, or HEAD and index), for an
+/// image comparison, a text diff of the LFS content, or the binary file note.
 fn local_binary(
     repo: &Repo,
     e: &status::Entry,
@@ -1024,9 +1055,7 @@ fn local_binary(
         ),
     };
     match (old, new) {
-        (Ok(old), Ok(new)) => {
-            Content::from_bytes(&e.path, old.as_deref(), new.as_deref(), prefs, theme)
-        }
+        (Ok(old), Ok(new)) => Content::from_sides(repo, &e.path, old, new, prefs, theme),
         (Err(err), _) | (_, Err(err)) => Content::Failed(err.to_string()),
     }
 }

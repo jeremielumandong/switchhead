@@ -44,6 +44,7 @@ mod branch_ops;
 mod commit_menu;
 mod file_history;
 mod form;
+mod lfs_ops;
 mod rebase;
 mod reflog;
 mod remote_ops;
@@ -74,6 +75,8 @@ enum Msg {
     Batch(Box<log::Batch>),
     Done(Result<WalkStats, String>),
     Tracking(Box<Refs>),
+    /// Whether the repository uses LFS.
+    Lfs(bool),
 }
 
 /// Something the workspace acts on.
@@ -156,6 +159,8 @@ pub struct RepoView {
     pub activity_open: bool,
     /// Activity entries the user folded.
     activity_collapsed: HashSet<u64>,
+    /// Git LFS: whether it is used, and the server's locks.
+    pub lfs: lfs_ops::LfsState,
     /// The assistant panel beside the history.
     helper: Option<(Entity<crate::assistant_panel::AssistantPanel>, Subscription)>,
     /// The commit search bar above the graph.
@@ -211,6 +216,8 @@ impl RepoView {
                 ChangesEvent::OpenFile { path, blame } => {
                     this.open_file_view(path.clone(), None, *blame, cx)
                 }
+                ChangesEvent::LfsLock { path, lock: true } => this.lfs_lock(path.clone(), cx),
+                ChangesEvent::LfsLock { path, lock: false } => this.lfs_unlock(path.clone(), cx),
             }),
         ];
         let repo_for_events = repo.clone();
@@ -244,6 +251,7 @@ impl RepoView {
             activity_open: false,
             activity_collapsed: HashSet::new(),
             helper: None,
+            lfs: lfs_ops::LfsState::new(),
             rebase: None,
             overlay: None,
             reflog: None,
@@ -548,6 +556,7 @@ impl RepoView {
 
     fn apply(&mut self, msg: Msg, fresh: &mut bool, cx: &mut Context<Self>) {
         match msg {
+            Msg::Lfs(used) => self.set_lfs_used(used, cx),
             Msg::Refs(refs) | Msg::Tracking(refs) => {
                 // A fresh tab starts on HEAD, like Fork.
                 if self.selected.is_none() && self.pending_select.is_none() && *fresh {
@@ -1103,6 +1112,9 @@ fn walk_thread(repo: Repo, opts: LogOptions, cancel: Cancel, tx: UnboundedSender
     if tx.send(Msg::Refs(Box::new(refs.clone()))).is_err() {
         return;
     }
+    if tx.send(Msg::Lfs(repo.uses_lfs())).is_err() {
+        return;
+    }
     let res = log::walk(&repo, &opts, &cancel, |b| {
         tx.send(Msg::Batch(Box::new(b))).is_ok()
     });
@@ -1217,6 +1229,15 @@ impl Render for RepoView {
             .on_action(cx.listener(|this, _: &actions::FindCommits, window, cx| {
                 this.open_search(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &actions::LfsFetch, _, cx| this.lfs_fetch(false, cx)))
+            .on_action(
+                cx.listener(|this, _: &actions::LfsFetchAll, _, cx| this.lfs_fetch(true, cx)),
+            )
+            .on_action(cx.listener(|this, _: &actions::LfsPull, _, cx| this.lfs_pull(cx)))
+            .on_action(cx.listener(|this, _: &actions::LfsPrune, _, cx| this.lfs_prune(cx)))
+            .on_action(
+                cx.listener(|this, _: &actions::LfsRefreshLocks, _, cx| this.load_lfs_locks(cx)),
+            )
             .on_action(cx.listener(|this, _: &actions::ShowReflog, window, cx| {
                 this.open_reflog("HEAD".into(), window, cx)
             }))

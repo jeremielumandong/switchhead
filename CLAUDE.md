@@ -234,6 +234,10 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
   and `SyntaxHighlighter` does not exist. Unknown names fall back to `"text"` (no colors).
 - Git for Windows sets `core.autocrlf=true` in its system config, so `git apply` to the work
   tree writes CRLF there. `TestRepo` turns it off; tests that compare file bytes rely on that.
+- `git lfs unlock <path>` looks the lock up by path on the server and fails with "multiple
+  locks found; ambiguous" when the server's answer has more than one; the app unlocks by
+  `--id`. `git lfs fetch` only fetches the current branch's objects, so older diff sides
+  stay pointers until `fetch --all`.
 - GPUI Kit 0.7.3 runs on the application-patched GPUI Fast stack vendored in `vendor/`
   (a copy of AgentOpsChat's): `compat/*` facades publish GPUI Fast's core under the
   `gpui-pre` 0.3.9 names Kit pins, `gpui` and `gpui_linux` are patched locally, and the

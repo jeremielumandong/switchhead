@@ -722,7 +722,7 @@ fn compute(repo: &Repo, f: &FileChange, prefs: &DiffPrefs, theme: &Arc<Highlight
         (Err(e), _) | (_, Err(e)) => return Content::Failed(e.to_string()),
     };
     let started = std::time::Instant::now();
-    let content = Content::from_bytes(&f.path, old.as_deref(), new.as_deref(), prefs, theme);
+    let content = Content::from_sides(repo, &f.path, old, new, prefs, theme);
     tracing::debug!(
         path = %f.path.display(),
         ms = started.elapsed().as_millis() as u64,

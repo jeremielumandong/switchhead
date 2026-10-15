@@ -73,6 +73,10 @@ pub(super) fn build_section_menu(
                     Box::new(|v, w, cx| v.stash_dialog(w, cx)),
                 )),
                 Section::Submodules | Section::Worktrees => menu,
+                Section::LfsLocks => menu.item(
+                    PopupMenuItem::new("Refresh Locks")
+                        .on_click(act(Box::new(|v, _, cx| v.load_lfs_locks(cx)))),
+                ),
             };
             let open = !v.read(cx).collapsed.contains(&section);
             menu.separator().item(

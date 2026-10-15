@@ -360,6 +360,21 @@ pub(super) fn build(
             .separator()
             .item(PopupMenuItem::new("File History").on_click(open(false)))
             .item(PopupMenuItem::new("Blame").on_click(open(true)));
+        if let Some(locked) = &v.read(cx).lfs {
+            let lock = !locked.contains(path);
+            let (view, path) = (view.clone(), path.clone());
+            menu = menu.separator().item(
+                PopupMenuItem::new(if lock {
+                    "Lock File (LFS)"
+                } else {
+                    "Unlock File (LFS)"
+                })
+                .on_click(move |_, _, cx| {
+                    let path = path.clone();
+                    let _ = view.update(cx, |_, cx| cx.emit(ChangesEvent::LfsLock { path, lock }));
+                }),
+            );
+        }
     }
     let text = t
         .paths

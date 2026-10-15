@@ -270,7 +270,11 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 
 ## M6 — Advanced (Fork parity)
 
-- [ ] M6-1 Git LFS: detect, pull/fetch/prune, lock/unlock, LFS file diffs.
+- [x] M6-1 Git LFS: detect, pull/fetch/prune, lock/unlock, LFS file diffs.
+      Landed: `git::lfs` (pointers, local store, `lfs locks --json`); diffs read pointers
+      through `.git/lfs/objects` (a note says how to fetch a missing side); palette Fetch /
+      Fetch All / Pull / Prune; LFS Locks sidebar (Unlock, Force Unlock by lock id) and
+      Lock / Unlock in Local Changes. Locks section hides when the server has none.
 - [ ] M6-2 Submodules: add, update (init/recursive), open as tab, show changes.
 - [ ] M6-3 Worktrees: list, add, remove, open as tab.
 - [ ] M6-4 Git-flow (init, start/finish feature, release, hotfix).
