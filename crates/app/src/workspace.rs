@@ -54,6 +54,7 @@ pub struct Workspace {
     _diff_prefs: gpui_kit::Subscription,
     _messages: gpui_kit::Subscription,
     _identities: gpui_kit::Subscription,
+    _assistant: gpui_kit::Subscription,
     /// Quick Launch, while open.
     palette: Option<(Entity<PaletteView>, gpui_kit::Subscription)>,
     _activation: gpui_kit::Subscription,
@@ -119,6 +120,13 @@ impl Workspace {
                 this.save(cx);
             }
         });
+        let assistant = cx.observe_global::<crate::assistant::AssistantSettings>(|this, cx| {
+            let m = cx.global::<crate::assistant::AssistantSettings>();
+            if this.state.assistant != *m {
+                this.state.assistant = m.clone();
+                this.save(cx);
+            }
+        });
         // Coming back to the window: pick up what changed in a terminal meanwhile.
         let activation = cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active()
@@ -143,6 +151,7 @@ impl Workspace {
             _diff_prefs: diff_prefs,
             _messages: messages,
             _identities: identities,
+            _assistant: assistant,
             palette: None,
             _activation: activation,
             repo_subs: Vec::new(),

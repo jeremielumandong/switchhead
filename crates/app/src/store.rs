@@ -73,6 +73,8 @@ pub struct State {
     pub messages: RecentMessages,
     /// Saved commit identities.
     pub identities: Identities,
+    /// Which coding CLI the assistant uses.
+    pub assistant: crate::assistant::AssistantSettings,
 }
 
 /// A saved commit identity: name, email and optional signing key.

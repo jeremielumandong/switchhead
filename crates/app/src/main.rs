@@ -9,6 +9,7 @@ mod actions;
 mod activity;
 mod appearance;
 mod assets;
+mod assistant;
 mod changes_model;
 mod changes_view;
 mod commit_box;
@@ -140,6 +141,7 @@ fn main() -> Result<()> {
             cx.set_global(state.diff);
             cx.set_global(state.messages.clone());
             cx.set_global(state.identities.clone());
+            cx.set_global(state.assistant.clone());
             cx.set_global(image_diff::ImageView::default());
             let theme_key = std::env::var("SWITCHHEAD_THEME")
                 .ok()
