@@ -1,0 +1,20 @@
+[package]
+name = "switchhead-agents"
+description = "AgentAdapter trait and coding-CLI adapters (ported from switchyard-agents)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

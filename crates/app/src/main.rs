@@ -105,6 +105,19 @@ fn init_logging(paths: &Paths) {
 }
 
 fn main() -> Result<()> {
+    // `switchhead mcp --repo <path>`: the read-only git MCP server for an assistant run.
+    // Standard output belongs to the protocol, so logs go to standard error only.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(repo) = switchhead_mcp::repo_arg(&args) {
+        tracing_subscriber::fmt()
+            .with_writer(std::io::stderr)
+            .with_env_filter(
+                EnvFilter::try_from_env("SWITCHHEAD_LOG")
+                    .unwrap_or_else(|_| EnvFilter::new("warn")),
+            )
+            .init();
+        return switchhead_mcp::run(std::path::Path::new(repo)).map_err(anyhow::Error::msg);
+    }
     let started = std::time::Instant::now();
     let paths = Paths::resolve().context("could not determine a home directory")?;
     init_logging(&paths);
