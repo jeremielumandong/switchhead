@@ -527,6 +527,24 @@ impl Client {
         })
     }
 
+    /// The latest release announced by an update feed: a public JSON file such as
+    /// `{"version": "0.2.0", "url": "https://…/download", "notes": "…"}`. No token is sent.
+    /// `None` when there is no feed yet (404).
+    pub fn latest_release(&self, feed: &str) -> Result<Option<Release>> {
+        let v: Value = match self.send(self.http.get(feed), "update feed") {
+            Ok(resp) => Self::json(resp)?,
+            Err(Error::Api { status: 404, .. }) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let version = str_at(&v, &["version"])
+            .ok_or_else(|| Error::Network("the update feed has no version".into()))?;
+        Ok(Some(Release {
+            version: version.trim_start_matches('v').to_owned(),
+            url: str_at(&v, &["url"]).unwrap_or_default(),
+            notes: str_at(&v, &["notes"]).unwrap_or_default(),
+        }))
+    }
+
     /// Download an image (an avatar). Refuses anything over 2 MB.
     pub fn download(&self, url: &str) -> Result<Vec<u8>> {
         let resp = self.send(self.http.get(url), "download")?;
@@ -538,6 +556,40 @@ impl Client {
             return Err(Error::Invalid("image too large".into()));
         }
         Ok(bytes.to_vec())
+    }
+}
+
+/// A published release.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Release {
+    /// Its version, without a leading `v` (`1.2.0`).
+    pub version: String,
+    /// Where to download it.
+    pub url: String,
+    /// A line about what changed (may be empty).
+    pub notes: String,
+}
+
+/// Whether version `candidate` is newer than `current` (`major.minor.patch`, compared as
+/// numbers; a pre-release suffix such as `-beta.1` sorts before the release itself).
+pub fn is_newer(candidate: &str, current: &str) -> bool {
+    fn parse(v: &str) -> Option<([u64; 3], bool)> {
+        let v = v.trim().trim_start_matches('v');
+        let (core, pre) = match v.split_once(['-', '+']) {
+            Some((core, rest)) => (core, !rest.is_empty() && v.as_bytes()[core.len()] == b'-'),
+            None => (v, false),
+        };
+        let mut parts = core.split('.').map(|p| p.parse::<u64>().ok());
+        let n = [
+            parts.next()??,
+            parts.next().unwrap_or(Some(0))?,
+            parts.next().unwrap_or(Some(0))?,
+        ];
+        parts.next().is_none().then_some((n, pre))
+    }
+    match (parse(candidate), parse(current)) {
+        (Some((a, a_pre)), Some((b, b_pre))) => a > b || (a == b && b_pre && !a_pre),
+        _ => false,
     }
 }
 
@@ -651,6 +703,44 @@ mod tests {
             }
         });
         (addr, seen)
+    }
+
+    #[test]
+    fn compares_versions() {
+        assert!(is_newer("0.2.0", "0.1.9"));
+        assert!(is_newer("v1.10.0", "1.9.3"));
+        assert!(is_newer("1.0.0", "1.0.0-beta.2"));
+        assert!(!is_newer("1.0.0-beta.2", "1.0.0"));
+        assert!(!is_newer("1.0.0", "1.0.0"));
+        assert!(!is_newer("0.9", "1.0.0"));
+        assert!(!is_newer("nightly", "1.0.0"));
+    }
+
+    #[test]
+    fn reads_the_update_feed() {
+        let (host, seen) = serve(Box::new(|r: &Seen| match r.path.as_str() {
+            "/latest.json" => (
+                200,
+                vec![],
+                r#"{"version":"v0.3.0","url":"https://h/download","notes":"Bisect"}"#.into(),
+            ),
+            _ => (404, vec![], "Not Found".into()),
+        }));
+        let c = client();
+        let r = c
+            .latest_release(&format!("{host}/latest.json"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (r.version.as_str(), r.url.as_str(), r.notes.as_str()),
+            ("0.3.0", "https://h/download", "Bisect")
+        );
+        assert_eq!(seen.lock().unwrap()[0].auth, "", "no token is sent");
+        // No feed published yet.
+        assert_eq!(
+            c.latest_release(&format!("{host}/none.json")).unwrap(),
+            None
+        );
     }
 
     fn client() -> Client {

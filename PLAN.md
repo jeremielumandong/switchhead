@@ -349,9 +349,14 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   commit-graph (cached weekly) and writes the numbers to the job summary. git/git meets its
   budget (first rows 87 ms here); linux does not (2.7 s), so its CI limit is a regression
   guard for now (see Follow-ups).
-- [ ] M7-3 Updates, crash logs, docs site.
+- [x] M7-3 Updates, crash logs, docs site.
   Website landed: `site/` (live graph sample from switchhead's own history, tour, themes),
-  published by `.github/workflows/pages.yml` (run by hand only); updates and crash logs still to do.
+  published by `.github/workflows/pages.yml` (run by hand only). Updates: a startup check
+  (Settings → Check at startup) and Check for Updates read the website's `latest.json` feed
+  (the repository is private, so not GitHub releases) and announce a newer version with a
+  download link; downloading and installing it in the app is
+  a follow-up. Crash logs: a panic writes a report to `<data>/crashes/` (newest 10 kept) and
+  the next start offers to show it; nothing is sent anywhere.
 
 ## Follow-ups
 
@@ -364,6 +369,8 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - Cherry-pick and revert of merge commits: ask which parent is the mainline (`-m`).
 
 - Packaging: a `switchhead <path>` command-line launcher on `PATH` (macOS `.pkg`, Windows installer).
+
+- Updates: download the new release's package and install it on restart, as Switchyard does (needs a SHA-256 crate approved; Switchyard uses `sha2`).
 
 - Log walk on linux: first rows take 2.7 s (budget 500 ms) because its ~950 tags are tips and gix's topo walk computes in-degrees down to the oldest tip's generation before yielding (git does the same: `git log --all --date-order -n 300` takes 5 s, `--branches` 17 ms). Explore lazily, only down to the generation of the next commit to show; then lower linux's limit in `perf.yml` to 1000 ms. The whole walk (34 s for 1.48M commits) is also slow.
 

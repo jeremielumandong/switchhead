@@ -66,6 +66,10 @@ pub struct Workspace {
     focus_tab: bool,
     /// A message for the status bar (an open that failed).
     pub(crate) notice: Option<SharedString>,
+    /// What the status bar says about updates.
+    pub(crate) update: Option<crate::updates::UpdateStatus>,
+    /// A crash report not offered yet.
+    pub(crate) crash: Option<PathBuf>,
     _save: Option<Task<()>>,
     _omarchy: Option<Task<()>>,
     _diff_prefs: gpui_kit::Subscription,
@@ -193,6 +197,8 @@ impl Workspace {
             accounts: None,
             focus_tab: false,
             notice: None,
+            update: None,
+            crash: None,
             _save: None,
             _omarchy: omarchy,
             _diff_prefs: diff_prefs,
@@ -212,6 +218,10 @@ impl Workspace {
         if let Some(path) = open {
             ws.open_path(path, true, cx);
         }
+        if ws.state.updates.check_at_startup {
+            ws.check_for_updates(false, cx);
+        }
+        ws.find_crash_report(cx);
         window.focus(&ws.focus, cx);
         ws
     }
@@ -1112,6 +1122,39 @@ impl Workspace {
             .child(div().h(rpx(1.)).my(rpx(6.)).bg(p.bd))
             .child(
                 div()
+                    .id("settings-check-updates")
+                    .flex()
+                    .items_center()
+                    .h(rpx(26.))
+                    .px(rpx(6.))
+                    .rounded(px(5.))
+                    .cursor_pointer()
+                    .text_size(ts::UI)
+                    .hover(|s| s.bg(p.hover))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.settings_open = false;
+                        this.check_for_updates(true, cx);
+                    }))
+                    .child(div().flex_1().child("Check for Updates"))
+                    .child(
+                        div()
+                            .text_color(p.fg3)
+                            .child(concat!("v", env!("CARGO_PKG_VERSION"))),
+                    ),
+            )
+            .child({
+                let on = self.state.updates.check_at_startup;
+                ui::checkbox("settings-check-at-startup", on, "Check at startup", p)
+                    .h(rpx(26.))
+                    .px(rpx(6.))
+                    .rounded(px(5.))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(p.hover))
+                    .on_click(cx.listener(move |this, _, _, cx| this.set_check_at_startup(!on, cx)))
+            })
+            .child(div().h(rpx(1.)).my(rpx(6.)).bg(p.bd))
+            .child(
+                div()
                     .flex()
                     .items_center()
                     .gap(rpx(6.))
@@ -1290,6 +1333,12 @@ impl Workspace {
                     .into_any_element(),
             );
         }
+        if let Some(crash) = self.render_crash_notice(p, cx) {
+            left.push(crash);
+        }
+        if let Some(update) = self.render_update(p) {
+            right.insert(0, update);
+        }
         if let Some(n) = &self.notice {
             left.push(
                 div()
@@ -1456,6 +1505,14 @@ impl Render for Workspace {
                 cx.listener(|this, _: &actions::ShowAccounts, w, cx| this.open_accounts(w, cx)),
             )
             .on_action(|_: &actions::ShowExternalTools, w, cx| crate::external_view::open(w, cx))
+            .on_action(cx.listener(|this, _: &actions::CheckForUpdates, _, cx| {
+                this.check_for_updates(true, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &actions::ShowCrashReports, _, cx| {
+                    this.show_crash_reports(cx)
+                }),
+            )
             .on_action(cx.listener(|this, _: &actions::EditCustomCommands, w, cx| {
                 this.open_custom_commands(w, cx)
             }))

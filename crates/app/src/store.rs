@@ -38,6 +38,11 @@ impl Paths {
         self.data.join("logs")
     }
 
+    /// Crash reports ([`crate::crash`]).
+    pub fn crashes_dir(&self) -> PathBuf {
+        self.data.join("crashes")
+    }
+
     /// The state file.
     pub fn state_file(&self) -> PathBuf {
         self.data.join("state.json")
@@ -81,6 +86,8 @@ pub struct State {
     pub accounts: crate::accounts::Accounts,
     /// Terminal, editor, diff and merge tools.
     pub external_tools: crate::external::ExternalTools,
+    /// Update check and crash report settings.
+    pub updates: crate::updates::UpdateSettings,
 }
 
 /// A saved commit identity: name, email and optional signing key.

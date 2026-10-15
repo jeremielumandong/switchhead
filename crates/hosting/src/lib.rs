@@ -1,7 +1,8 @@
 //! Hosting accounts: sign in to GitHub, GitLab, Bitbucket and Azure DevOps with an access
 //! token, list the account's repositories to clone, create pull requests, and fetch
-//! avatars. Calls are blocking (run them on a background thread); tokens live in the OS
-//! keychain ([`secrets`]) and never appear in logs, errors or the app's state file.
+//! avatars; also the update feed on switchhead's website, for the update check. Calls are
+//! blocking (run them on a background thread); tokens live in the OS keychain
+//! ([`secrets`]) and never appear in logs, errors or the app's state file.
 
 pub mod api;
 pub mod remote;

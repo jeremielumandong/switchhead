@@ -250,6 +250,12 @@ workspace version, which is published once all three are there. macOS signing us
 environment's Azure variables; without them the packages are built unsigned and kept as
 workflow artifacts (or uploaded with the `upload_unsigned` input).
 
+At startup switchhead reads the update feed on its website (`site/latest.json`, published
+with the site; no account or token) and shows a newer version in the status bar with a
+link to download it; turn this off under
+Settings → Check at startup. If switchhead crashes it writes a report to the `crashes`
+folder of its data folder and offers to show it at the next start; reports are never sent.
+
 ## How it is built
 
 | Crate | What it does |

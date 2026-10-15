@@ -19,6 +19,7 @@ mod changes_view;
 mod command_line;
 mod commit_box;
 mod commit_view;
+mod crash;
 mod custom_commands;
 mod custom_commands_view;
 mod diff_model;
@@ -47,6 +48,7 @@ mod submodule_diff;
 mod theme;
 mod tree_view;
 mod ui;
+mod updates;
 mod workspace;
 
 use std::borrow::Cow;
@@ -138,6 +140,7 @@ fn main() -> Result<()> {
     let started = std::time::Instant::now();
     let paths = Paths::resolve().context("could not determine a home directory")?;
     init_logging(&paths);
+    crash::install(paths.crashes_dir());
     let state = State::load(&paths.state_file());
     // `switchhead <path>` opens a repository (or scans a folder).
     let open = std::env::args_os().nth(1).map(PathBuf::from);
