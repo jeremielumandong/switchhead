@@ -72,7 +72,21 @@ pub(super) fn build_section_menu(
                     "Stash Changes…",
                     Box::new(|v, w, cx| v.stash_dialog(w, cx)),
                 )),
-                Section::Submodules | Section::Worktrees => menu,
+                Section::Submodules => menu
+                    .item(item(
+                        "Add Submodule…",
+                        Box::new(|v, w, cx| v.add_submodule_dialog(w, cx)),
+                    ))
+                    .separator()
+                    .item(item(
+                        "Update All",
+                        Box::new(|v, _, cx| v.update_submodules(Vec::new(), false, cx)),
+                    ))
+                    .item(item(
+                        "Update All Recursively",
+                        Box::new(|v, _, cx| v.update_submodules(Vec::new(), true, cx)),
+                    )),
+                Section::Worktrees => menu,
                 Section::LfsLocks => menu.item(
                     PopupMenuItem::new("Refresh Locks")
                         .on_click(act(Box::new(|v, _, cx| v.load_lfs_locks(cx)))),

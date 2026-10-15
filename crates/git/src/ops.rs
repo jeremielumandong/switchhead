@@ -638,27 +638,6 @@ impl Repo {
 
     // ---- Advanced (M6) ----
 
-    /// Initialise and update submodules (recursively).
-    pub fn submodule_update(&self, cancel: &Cancel, on_line: impl FnMut(&str)) -> Result<()> {
-        self.streaming(
-            &["submodule", "update", "--init", "--recursive", "--progress"],
-            cancel,
-            on_line,
-        )
-    }
-
-    /// Add a submodule at `path`.
-    pub fn submodule_add(&self, url: &str, path: &Path) -> Result<()> {
-        self.run_git(vec![
-            os("submodule"),
-            os("add"),
-            os("-q"),
-            os(url),
-            path.as_os_str().to_owned(),
-        ])?;
-        Ok(())
-    }
-
     /// Add a linked worktree at `path` for `rev` (`new_branch`: create it there).
     pub fn worktree_add(&self, path: &Path, rev: &str, new_branch: Option<&str>) -> Result<()> {
         let mut args = vec![os("worktree"), os("add"), os("-q")];

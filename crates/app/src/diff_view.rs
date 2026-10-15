@@ -20,7 +20,6 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, StyledText, UniformListScrollHandle, Window, div,
     px, uniform_list,
 };
-use switchhead_git::Oid;
 use switchhead_git::diff::{FileDiff, FileStatus, LineKind, TextDiff};
 
 use crate::appearance::{rpx, ts};
@@ -55,9 +54,10 @@ pub(crate) enum Content {
         old: Option<u64>,
         new: Option<u64>,
     },
+    /// A submodule: the commits between its two versions.
     Submodule {
-        old: Option<Oid>,
-        new: Option<Oid>,
+        path: String,
+        diff: Box<switchhead_git::submodules::SubmoduleDiff>,
     },
     /// An LFS file whose object (on at least one side) is not downloaded: each side's
     /// size, and whether it is in the local store.
@@ -248,14 +248,9 @@ pub(crate) fn body(
             p.fg3,
         ),
         Content::Lfs { old, new } => message(lfs_note(*old, *new), p.fg3),
-        Content::Submodule { old, new } => message(
-            format!(
-                "Submodule {} → {}",
-                old.map_or("none".into(), |o| switchhead_git::short(&o)),
-                new.map_or("none".into(), |o| switchhead_git::short(&o)),
-            ),
-            p.fg2,
-        ),
+        Content::Submodule { path, diff } => {
+            crate::submodule_diff::render(path, diff, scroll, row_h, p, cx)
+        }
         Content::Failed(e) => message(e.clone(), p.deleted),
         Content::Text { diff, .. } if diff.is_empty() => message(
             if loaded.prefs.whitespace == WhitespacePref::Show {
