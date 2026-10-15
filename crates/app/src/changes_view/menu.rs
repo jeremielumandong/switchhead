@@ -410,11 +410,28 @@ pub(super) fn build(
         .map(|p| p.to_string_lossy().into_owned())
         .collect::<Vec<_>>()
         .join("\n");
-    menu.separator().item(
+    let menu = menu.separator().item(
         PopupMenuItem::new(if n == 1 { "Copy Path" } else { "Copy Paths" }).on_click(
             move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(text.clone())),
         ),
-    )
+    );
+    match t.paths.as_slice() {
+        [path] => {
+            let (view, path) = (view.clone(), path.clone());
+            crate::custom_commands::add_to_menu(
+                menu,
+                crate::custom_commands::CommandTarget::File,
+                false,
+                move |index, _, cx| {
+                    let path = path.clone();
+                    let _ =
+                        view.update(cx, |_, cx| cx.emit(ChangesEvent::RunCustom { index, path }));
+                },
+                cx,
+            )
+        }
+        _ => menu,
+    }
 }
 
 #[cfg(test)]

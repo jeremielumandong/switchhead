@@ -291,7 +291,12 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
       Git-flow menu (Initialize / Start Feature, Release, Hotfix / Finish current / Settings),
       Finish on a flow branch's sidebar menu, and palette commands. Finishing again after a
       conflict carries on. Deferred: push after finish, support and bugfix branches.
-- [ ] M6-5 Custom commands (user-defined, with variables like `${ref}` `${sha}` `${file}`).
+- [x] M6-5 Custom commands (user-defined, with variables like `${ref}` `${sha}` `${file}`).
+      Landed: Settings → Custom Commands… editor (name, runs on repository / commit / branch
+      or tag / file, shell command, ask first); they appear in the toolbar's Commands menu,
+      the graph's commit menu, the sidebar's branch and tag menu and both file lists' menus.
+      `${repo} ${branch} ${sha} ${ref} ${file} ${remote}` are quoted when needed
+      (`cli::run_shell`, see DECISIONS); output streams to the activity log.
 - [ ] M6-6 Hosting accounts (GitHub, GitLab, Bitbucket, Azure DevOps): clone from account,
       create pull request, avatars.
 - [ ] M6-7 Patches: create from commits, apply patch / `git am`.

@@ -35,7 +35,7 @@ use crate::actions;
 use crate::activity::{Activity, Outcome};
 use crate::appearance::{rpx, ts};
 use crate::changes_view::{ChangesEvent, ChangesView};
-use crate::commit_view::{CommitView, Navigate, OpenFile};
+use crate::commit_view::{CommitView, Navigate, OpenFile, RunCustom};
 use crate::graph_paint;
 use crate::theme::{MONO, Palette, palette};
 use crate::ui;
@@ -43,6 +43,7 @@ use crate::ui;
 mod activity_panel;
 mod branch_ops;
 mod commit_menu;
+mod custom_ops;
 mod file_history;
 mod flow_ops;
 mod form;
@@ -60,6 +61,7 @@ mod tree;
 mod undo;
 mod worktree_ops;
 
+pub(crate) use custom_ops::build_commands_menu;
 pub(crate) use flow_ops::build_flow_menu;
 
 use sidebar::{Section, SideRow};
@@ -182,6 +184,9 @@ pub struct RepoView {
     reflog: Option<gpui_kit::WeakEntity<crate::reflog_view::ReflogView>>,
     /// Focus the current mode at the next render (the file view closed).
     refocus: bool,
+    /// A custom command a file list asked for, run at the next render (it may ask first,
+    /// which needs the window).
+    pending_custom: Option<(usize, custom_ops::CustomOn)>,
     /// The interactive rebase editor, shown in place of the graph.
     rebase: Option<(Entity<crate::rebase_editor::RebaseEditor>, Subscription)>,
     details: Entity<CommitView>,
@@ -199,7 +204,7 @@ pub struct RepoView {
     _walk: Option<Task<()>>,
     _watch: Task<()>,
     _events: Task<()>,
-    _details: [Subscription; 2],
+    _details: [Subscription; 3],
     _changes: [Subscription; 2],
     _op: Option<Task<()>>,
 }
@@ -210,6 +215,9 @@ impl RepoView {
         let details = cx.new(|cx| CommitView::new(repo.clone(), cx));
         let open_file = cx.subscribe(&details, |this, _, ev: &OpenFile, cx| {
             this.open_file_view(ev.path.clone(), Some(ev.rev), ev.blame, cx);
+        });
+        let run_custom = cx.subscribe(&details, |this, _, ev: &RunCustom, cx| {
+            this.queue_custom(ev.index, Some(ev.rev), &ev.path, cx)
         });
         let sub = cx.subscribe(&details, |this, _, Navigate(id), cx| {
             match this.log.row_of(id) {
@@ -232,6 +240,9 @@ impl RepoView {
                 }
                 ChangesEvent::UpdateSubmodule(path) => {
                     this.update_submodules(vec![path.clone()], false, cx)
+                }
+                ChangesEvent::RunCustom { index, path } => {
+                    this.queue_custom(*index, None, path, cx)
                 }
                 ChangesEvent::LfsLock { path, lock: true } => this.lfs_lock(path.clone(), cx),
                 ChangesEvent::LfsLock { path, lock: false } => this.lfs_unlock(path.clone(), cx),
@@ -274,6 +285,7 @@ impl RepoView {
             overlay: None,
             reflog: None,
             refocus: false,
+            pending_custom: None,
             search: None,
             details,
             details_split: cx.new(|_| ResizableState::default()),
@@ -287,7 +299,7 @@ impl RepoView {
             _watch: Self::watch(cx),
             _events: Self::watch_events(repo_for_events, cx),
             _walk: None,
-            _details: [sub, open_file],
+            _details: [sub, open_file, run_custom],
             _op: None,
         };
         v.reload(cx);
@@ -745,8 +757,8 @@ impl RepoView {
     /// Run a git operation on a thread, show its progress, reload when it ends.
     pub fn run_op(
         &mut self,
-        label: &'static str,
-        done: &'static str,
+        label: impl Into<SharedString>,
+        done: impl Into<SharedString>,
         f: impl FnOnce(&Repo, &Cancel, &mut dyn FnMut(&str)) -> switchhead_git::Result<()>
         + Send
         + 'static,
@@ -755,11 +767,12 @@ impl RepoView {
         if matches!(self.op, Some(OpStatus::Running { .. })) {
             return;
         }
+        let (label, done): (SharedString, SharedString) = (label.into(), done.into());
         self.op = Some(OpStatus::Running {
-            label: label.into(),
+            label: label.clone(),
             progress: SharedString::default(),
         });
-        let entry = self.activity.start(label);
+        let entry = self.activity.start(&label);
         cx.notify();
         let (tx, mut rx) = unbounded_channel::<Result<String, String>>();
         let repo = self.repo.clone();
@@ -797,7 +810,7 @@ impl RepoView {
                             if !line.is_empty() {
                                 v.activity.line(entry, line);
                                 v.op = Some(OpStatus::Running {
-                                    label: label.into(),
+                                    label: label.clone(),
                                     progress: line.to_owned().into(),
                                 });
                             }
@@ -810,7 +823,7 @@ impl RepoView {
                                     Some(OpStatus::Cancelled(format!("{label}: cancelled").into()));
                             } else if e.is_empty() {
                                 v.activity.finish(entry, Outcome::Done, "");
-                                v.op = Some(OpStatus::Done(done.into()));
+                                v.op = Some(OpStatus::Done(done.clone()));
                                 if let Some(then) = v.op_then.take() {
                                     then(v, cx);
                                 }
@@ -834,8 +847,8 @@ impl RepoView {
     /// [`RepoView::run_op`], then `then` once it succeeds.
     pub fn run_op_then(
         &mut self,
-        label: &'static str,
-        done: &'static str,
+        label: impl Into<SharedString>,
+        done: impl Into<SharedString>,
         f: impl FnOnce(&Repo, &Cancel, &mut dyn FnMut(&str)) -> switchhead_git::Result<()>
         + Send
         + 'static,
@@ -854,6 +867,27 @@ impl RepoView {
         if let Some(c) = &self.op_cancel {
             c.cancel();
         }
+    }
+
+    /// Run custom command `index` on the file at `path` (in commit `rev`, else the work
+    /// tree) at the next render.
+    fn queue_custom(
+        &mut self,
+        index: usize,
+        rev: Option<Oid>,
+        path: &std::path::Path,
+        cx: &mut Context<Self>,
+    ) {
+        let file = path.to_string_lossy().replace('\\', "/");
+        self.pending_custom = Some((
+            index,
+            custom_ops::CustomOn {
+                sha: rev.map(|r| r.to_string()),
+                reference: rev.map(|r| r.to_string()),
+                file: Some(file),
+            },
+        ));
+        cx.notify();
     }
 
     /// The operation log.
@@ -1182,6 +1216,12 @@ impl Render for RepoView {
         let p = palette(cx);
         let rem = window.rem_size();
         self.ensure_side_filter(window, cx);
+        if let Some((index, on)) = self.pending_custom.take() {
+            let view = cx.entity();
+            window.defer(cx, move |window, cx| {
+                view.update(cx, |v, cx| v.run_custom_command(index, on, window, cx))
+            });
+        }
         if std::mem::take(&mut self.refocus) {
             let mode = self.mode;
             self.set_mode(mode, window, cx);

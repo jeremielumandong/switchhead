@@ -53,6 +53,16 @@ pub struct OpenFile {
     pub blame: bool,
 }
 
+/// The user ran a custom command on a file from the file list's menu.
+pub struct RunCustom {
+    /// The command's index in [`crate::custom_commands::CustomCommands`].
+    pub index: usize,
+    /// The file's path in `rev`.
+    pub path: PathBuf,
+    /// The commit shown.
+    pub rev: Oid,
+}
+
 /// The details pane.
 pub struct CommitView {
     repo: Repo,
@@ -80,6 +90,7 @@ pub struct CommitView {
 
 impl EventEmitter<Navigate> for CommitView {}
 impl EventEmitter<OpenFile> for CommitView {}
+impl EventEmitter<RunCustom> for CommitView {}
 
 impl CommitView {
     /// An empty pane for `repo`.
@@ -797,7 +808,8 @@ fn file_menu(
         }
     };
     let text = path.to_string_lossy().into_owned();
-    menu.item(PopupMenuItem::new("File History").on_click(open(false)))
+    let menu = menu
+        .item(PopupMenuItem::new("File History").on_click(open(false)))
         .item(
             PopupMenuItem::new("Blame")
                 .disabled(deleted)
@@ -806,7 +818,18 @@ fn file_menu(
         .separator()
         .item(PopupMenuItem::new("Copy Path").on_click(move |_, _, cx| {
             cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
-        }))
+        }));
+    let view = view.clone();
+    crate::custom_commands::add_to_menu(
+        menu,
+        crate::custom_commands::CommandTarget::File,
+        false,
+        move |index, _, cx| {
+            let path = path.clone();
+            let _ = view.update(cx, |_, cx| cx.emit(RunCustom { index, path, rev }));
+        },
+        cx,
+    )
 }
 
 /// A full local date: "Tue, Oct 14 2026 15:02".

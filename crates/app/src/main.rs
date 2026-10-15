@@ -17,6 +17,8 @@ mod changes_view;
 mod command_line;
 mod commit_box;
 mod commit_view;
+mod custom_commands;
+mod custom_commands_view;
 mod diff_model;
 mod diff_view;
 mod file_list;
@@ -147,6 +149,7 @@ fn main() -> Result<()> {
             cx.set_global(state.messages.clone());
             cx.set_global(state.identities.clone());
             cx.set_global(state.assistant.clone());
+            cx.set_global(state.custom_commands.clone());
             cx.set_global(image_diff::ImageView::default());
             let theme_key = std::env::var("SWITCHHEAD_THEME")
                 .ok()

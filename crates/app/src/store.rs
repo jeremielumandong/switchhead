@@ -75,6 +75,8 @@ pub struct State {
     pub identities: Identities,
     /// Which coding CLI the assistant uses.
     pub assistant: crate::assistant::AssistantSettings,
+    /// The user's custom commands.
+    pub custom_commands: crate::custom_commands::CustomCommands,
 }
 
 /// A saved commit identity: name, email and optional signing key.

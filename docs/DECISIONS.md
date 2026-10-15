@@ -139,3 +139,15 @@ release branch in progress instead of develop (as git-flow does), and deletes th
 with `-d`. Each step is skipped when already done, so after a conflict the user resolves,
 commits and finishes again. Pushing after a finish, support branches and bugfix branches
 are left out.
+
+## 2026-10-15 — Custom commands run through the shell, with quoted variables
+
+Custom commands are shell commands (`sh -c` in the repository's folder; `cmd /S /C` on
+Windows), so pipes, `&&` and scripts work as users expect from Fork. Variables (`${repo}`
+`${branch}` `${sha}` `${ref}` `${file}` `${remote}`) are inserted as they are when they
+hold only plain characters, else quoted for the shell (single quotes on Unix), so a branch
+or file name cannot add commands; on Windows a value with `"` or `%` is refused because cmd
+has no safe way to quote it. A variable with no value where the command runs (`${file}` on
+a commit) stops the run with a message. Output goes to the activity log line by line, like
+git operations. They are the user's own commands and run without the agent rules (those
+apply to the coding CLI, not to the user).

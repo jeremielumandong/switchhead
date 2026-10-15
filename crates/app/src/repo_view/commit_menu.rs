@@ -348,5 +348,19 @@ pub(super) fn build_commit_menu(
                 .on_click(move |_, _, cx| cx.open_url(&url)),
         );
     }
-    menu
+    let view_c = view.clone();
+    crate::custom_commands::add_to_menu(
+        menu,
+        crate::custom_commands::CommandTarget::Commit,
+        busy,
+        move |i, window, cx| {
+            let on = super::custom_ops::CustomOn {
+                sha: Some(id.to_string()),
+                reference: Some(id.to_string()),
+                file: None,
+            };
+            let _ = view_c.update(cx, |v, cx| v.run_custom_command(i, on, window, cx));
+        },
+        cx,
+    )
 }
