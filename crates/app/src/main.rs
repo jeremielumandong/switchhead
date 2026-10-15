@@ -36,6 +36,7 @@ mod merge_view;
 mod minimap;
 mod omarchy;
 mod palette;
+mod probe;
 mod rebase_editor;
 mod rebase_model;
 mod reflog_view;

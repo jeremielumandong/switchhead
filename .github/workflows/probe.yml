@@ -1,0 +1,49 @@
+# TEMPORARY (not for merge): run the app's branch-delete probe on Windows.
+name: Probe
+
+on:
+  pull_request:
+
+jobs:
+  probe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p switchhead-app
+      - name: Test repository
+        shell: bash
+        run: |
+          set -e
+          mkdir -p "$RUNNER_TEMP/repo" && cd "$RUNNER_TEMP/repo"
+          git init -q -b main .
+          git config user.name t && git config user.email t@t
+          {
+            for i in $(seq 1 3000); do
+              echo "commit refs/heads/main"
+              echo "committer t <t@t> $((1700000000 + i)) +0000"
+              echo "data <<EOF"; echo "commit $i"; echo "EOF"
+              echo "M 644 inline f$((i % 50)).txt"
+              echo "data <<EOF"; echo "line $i"; echo "EOF"
+              echo
+            done
+          } | git fast-import --quiet
+          git checkout -q main
+          for i in $(seq 1 30); do git branch -f z$i main~$((i * 20)); done
+          git pack-refs --all
+          git branch | wc -l
+      - name: Run the probe
+        shell: bash
+        run: |
+          export SWITCHHEAD_DATA="$RUNNER_TEMP/data"
+          export SWITCHHEAD_PROBE="$RUNNER_TEMP/probe.txt"
+          export SWITCHHEAD_LOG="info,switchhead_git=debug,switchhead=debug"
+          set +e
+          timeout 300 ./target/release/switchhead.exe "$RUNNER_TEMP/repo"
+          echo "exit $?"
+          cat "$SWITCHHEAD_PROBE"
+          echo "--- branches left"; git -C "$RUNNER_TEMP/repo" branch | wc -l
+          echo "--- log"; tail -n 80 "$SWITCHHEAD_DATA"/logs/switchhead.log || true
+          ls "$SWITCHHEAD_DATA"/crashes 2>/dev/null && cat "$SWITCHHEAD_DATA"/crashes/* || true
+          grep -q "probe done" "$SWITCHHEAD_PROBE"
