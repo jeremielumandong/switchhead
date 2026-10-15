@@ -231,6 +231,24 @@ pub fn conflict_prompt(path: &str) -> String {
     )
 }
 
+/// The prompt asking how to do `task` with git in this repository.
+pub fn command_prompt(task: &str) -> String {
+    format!(
+        "The user of a git client asks how to do this in this repository:\n\n{task}\n\n\
+         Look at the repository first (`status`, `branches`, `log`, and `show` or `diff` as \
+         needed) so the commands use its real branch, remote and file names. Then answer \
+         in a few short sentences: what the commands do, and anything that can lose work \
+         or rewrite published history, with a safer alternative when there is one.\n\n\
+         Put the commands in one ```bash block, one plain `git` command per line, in the \
+         order to run them, with `#` comments where a step needs explaining. No pipes, \
+         `&&`, variables, globs or placeholders like `<branch>`: the app runs each line by \
+         itself without a shell and without a terminal, so avoid commands that open an \
+         editor or prompt (use `-m`, `--no-edit`). If the request is not about git or \
+         cannot be done with git, say so and give no block. You cannot run anything: \
+         the user reviews each command and runs it from the app."
+    )
+}
+
 /// Split an answer into the text before its last fenced code block and the block's
 /// content (with a final newline). `None` when it has no closed block.
 pub fn fenced_block(answer: &str) -> Option<(String, String)> {

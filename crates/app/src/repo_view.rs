@@ -156,6 +156,8 @@ pub struct RepoView {
     pub activity_open: bool,
     /// Activity entries the user folded.
     activity_collapsed: HashSet<u64>,
+    /// The git command helper beside the history.
+    helper: Option<(Entity<crate::git_helper::GitHelper>, Subscription)>,
     /// The commit search bar above the graph.
     search: Option<search::Search>,
     /// A file's history and blame or a reflog, shown in place of the graph or Local Changes.
@@ -241,6 +243,7 @@ impl RepoView {
             activity: Activity::default(),
             activity_open: false,
             activity_collapsed: HashSet::new(),
+            helper: None,
             rebase: None,
             overlay: None,
             reflog: None,
@@ -404,6 +407,32 @@ impl RepoView {
     /// Commits loaded so far.
     pub fn commit_count(&self) -> usize {
         self.log.len()
+    }
+
+    /// Whether the git command helper is open.
+    pub fn helper_open(&self) -> bool {
+        self.helper.is_some()
+    }
+
+    /// Open the git command helper (focusing its question) or close it.
+    pub fn toggle_helper(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.helper.take().is_some() {
+            cx.notify();
+            return;
+        }
+        let repo = self.repo.clone();
+        let helper = cx.new(|cx| crate::git_helper::GitHelper::new(repo, window, cx));
+        let sub = cx.subscribe_in(&helper, window, |this, _, ev, window, cx| match ev {
+            crate::git_helper::HelperEvent::Ran => this.reload(cx),
+            crate::git_helper::HelperEvent::Close => {
+                this.helper = None;
+                window.focus(&this.focus, cx);
+                cx.notify();
+            }
+        });
+        helper.update(cx, |h, cx| h.focus_input(window, cx));
+        self.helper = Some((helper, sub));
+        cx.notify();
     }
 
     /// Re-read refs and the log (keeps the selection when the commit is still there).
@@ -1090,6 +1119,11 @@ impl Render for RepoView {
             .on_action(
                 cx.listener(|this, _: &actions::ToggleActivity, _, cx| this.toggle_activity(cx)),
             )
+            .on_action(
+                cx.listener(|this, _: &actions::ToggleGitHelper, window, cx| {
+                    this.toggle_helper(window, cx)
+                }),
+            )
             .on_action(cx.listener(|this, _: &actions::NewBranch, window, cx| {
                 this.new_branch_at_selection(window, cx)
             }))
@@ -1130,6 +1164,17 @@ impl Render for RepoView {
                         d.child(self.render_activity(&p, cx))
                     }),
             )
+            .when_some(self.helper.as_ref(), |d, (helper, _)| {
+                d.child(
+                    div()
+                        .flex_none()
+                        .w(rpx(420.))
+                        .h_full()
+                        .border_l_1()
+                        .border_color(p.bd)
+                        .child(helper.clone()),
+                )
+            })
     }
 }
 

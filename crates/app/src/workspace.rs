@@ -400,6 +400,7 @@ impl Workspace {
             ),
             ToolbarOp::Branch => v.new_branch_at_selection(window, cx),
             ToolbarOp::Refresh => v.reload(cx),
+            ToolbarOp::Helper => v.toggle_helper(window, cx),
         });
     }
 
@@ -413,7 +414,8 @@ impl Workspace {
                     tip: &'static str,
                     op: Option<ToolbarOp>,
                     cx: &mut Context<Self>| {
-            let enabled = op.is_some() && !(busy && op != Some(ToolbarOp::Refresh));
+            let enabled = op.is_some()
+                && !(busy && !matches!(op, Some(ToolbarOp::Refresh | ToolbarOp::Helper)));
             div()
                 .id(id)
                 .flex()
@@ -522,8 +524,8 @@ impl Workspace {
                 "tool-assistant",
                 "icons/bot.svg",
                 "Assistant",
-                "Coding-CLI assistant (coming with milestone 5)",
-                None,
+                "Git Helper: ask the coding CLI for git commands",
+                Some(ToolbarOp::Helper),
                 cx,
             ))
             .into_any_element()
@@ -681,6 +683,7 @@ impl Workspace {
     fn render_rail(&self, p: &Palette, cx: &mut Context<Self>) -> AnyElement {
         let repo_sidebar = self.active_repo().map(|v| v.read(cx).sidebar);
         let repo_search = self.active_repo().map(|v| v.read(cx).search_open());
+        let repo_helper = self.active_repo().map(|v| v.read(cx).helper_open());
         let item = |id: &'static str,
                     icon: &'static str,
                     tip: &'static str,
@@ -763,9 +766,9 @@ impl Workspace {
             .child(item(
                 "rail-assistant",
                 "icons/bot.svg",
-                "Assistant (coming with milestone 5)",
-                false,
-                false,
+                "Git Helper",
+                repo_helper == Some(true),
+                repo_helper.is_some(),
                 RailItem::Assistant,
                 cx,
             ))
@@ -808,7 +811,11 @@ impl Workspace {
                     });
                 }
             }
-            RailItem::Assistant => {}
+            RailItem::Assistant => {
+                if let Some(v) = self.active_repo().cloned() {
+                    v.update(cx, |v, cx| v.toggle_helper(window, cx));
+                }
+            }
         }
     }
 
@@ -1092,6 +1099,7 @@ enum ToolbarOp {
     Pop,
     Branch,
     Refresh,
+    Helper,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
