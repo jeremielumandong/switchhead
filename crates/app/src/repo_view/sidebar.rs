@@ -83,8 +83,19 @@ pub enum Target {
     Tag(String),
     /// Stash `stash@{n}`: a click shows it in the details pane.
     Stash(usize),
-    /// Open a folder (a worktree) in a tab.
-    Open(PathBuf),
+    /// A linked or main worktree; opens in a tab unless it is this one or missing.
+    Worktree {
+        /// Its folder.
+        path: PathBuf,
+        /// The worktree this tab shows.
+        current: bool,
+        /// The main worktree (cannot be removed).
+        main: bool,
+        /// Locked against pruning.
+        locked: bool,
+        /// Its folder is gone.
+        missing: bool,
+    },
     /// A submodule (its path in the repository); a cloned one opens in a tab.
     Submodule {
         /// Relative to the repository's root.
@@ -94,8 +105,6 @@ pub enum Target {
     },
     /// An LFS lock on this path.
     LfsLock(PathBuf),
-    /// Nothing (the current worktree).
-    None,
 }
 
 /// One line of the sidebar (flattened, so the list can be virtualized).
@@ -375,6 +384,11 @@ impl RepoView {
                         .into_owned();
                     let detail = if w.prunable {
                         Some("missing".to_owned())
+                    } else if w.locked {
+                        Some(format!(
+                            "{} · locked",
+                            w.branch.as_deref().unwrap_or("detached")
+                        ))
                     } else {
                         w.branch
                             .clone()
@@ -387,10 +401,12 @@ impl RepoView {
                         detail: detail.map(SharedString::from),
                         current: here,
                         rev: None,
-                        target: if here || w.prunable {
-                            Target::None
-                        } else {
-                            Target::Open(w.path.clone())
+                        target: Target::Worktree {
+                            path: w.path.clone(),
+                            current: here,
+                            main: w.is_main,
+                            locked: w.locked,
+                            missing: w.prunable,
                         },
                     }
                 })
@@ -486,14 +502,20 @@ impl RepoView {
                 );
             }
             Target::Tag(name) => self.confirm_tag_checkout(name, window, cx),
-            Target::Open(path) => cx.emit(RepoViewEvent::Open(path)),
+            Target::Worktree {
+                path,
+                current: false,
+                missing: false,
+                ..
+            } => cx.emit(RepoViewEvent::Open(path)),
+            Target::Worktree { .. } => {}
             Target::Submodule { path, cloned: true } => {
                 cx.emit(RepoViewEvent::Open(self.repo.root().join(path)))
             }
             Target::Submodule { cloned: false, .. } => {}
             // A locked file: its history.
             Target::LfsLock(path) => self.open_file_view(path, None, false, cx),
-            Target::Stash(_) | Target::None => {}
+            Target::Stash(_) => {}
         }
     }
 
