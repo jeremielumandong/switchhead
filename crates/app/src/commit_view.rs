@@ -22,7 +22,7 @@ use gpui_kit::{
     AnyElement, App, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable,
     FontWeight, InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent,
     ParentElement as _, Render, ScrollStrategy, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Subscription, Task, UniformListScrollHandle, WeakEntity, Window, div, px,
+    Styled as _, Subscription, Task, UniformListScrollHandle, WeakEntity, Window, div, img, px,
     uniform_list,
 };
 use switchhead_git::commit::{self, CommitInfo};
@@ -69,6 +69,8 @@ pub struct CommitView {
     commit: Option<Oid>,
     info: Option<Rc<CommitInfo>>,
     labels: Vec<Label>,
+    /// The repository's main remote URL (for avatars from a signed-in account).
+    remote: Option<String>,
     files: Rc<Vec<FileChange>>,
     rows: Vec<FileRow>,
     collapsed: HashSet<PathBuf>,
@@ -103,6 +105,7 @@ impl CommitView {
             repo,
             commit: None,
             info: None,
+            remote: None,
             labels: Vec::new(),
             files: Rc::default(),
             rows: Vec::new(),
@@ -133,6 +136,11 @@ impl CommitView {
         }
         self.prefer = Some(path);
         self.show(Some(id), Vec::new(), cx);
+    }
+
+    /// The repository's main remote URL, for authors' avatars.
+    pub fn set_remote(&mut self, remote: Option<String>) {
+        self.remote = remote;
     }
 
     /// Show commit `id` (`None`: nothing selected). `labels`: its refs.
@@ -328,6 +336,12 @@ impl CommitView {
                 .child(label)
         };
         let row = || div().flex().items_start().gap(rpx(8.)).min_w_0();
+        let picture = crate::accounts::author_avatar(
+            &info.author.email,
+            &info.id.to_string(),
+            self.remote.as_deref(),
+            cx,
+        );
         let person = |s: &commit::Signature| {
             div()
                 .flex_1()
@@ -385,7 +399,14 @@ impl CommitView {
                     ),
                 )
             })
-            .child(row().child(field("Author")).child(person(&info.author)))
+            .child(
+                row()
+                    .child(field("Author"))
+                    .when_some(picture, |d, path| {
+                        d.child(img(path).flex_none().size(rpx(18.)).rounded_full())
+                    })
+                    .child(person(&info.author)),
+            )
             .when(info.committed_by_other(), |d| {
                 d.child(
                     row()

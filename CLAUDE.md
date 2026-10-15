@@ -46,6 +46,7 @@ switchhead/
   rust-toolchain.toml     # 1.98.1, matching Switchyard / gpui-fast
   crates/
     git/     switchhead-git     Git engine: gix reads, `git` CLI writes, graph layout, parsers
+    hosting/ switchhead-hosting GitHub / GitLab / Bitbucket / Azure DevOps APIs, tokens in the keychain
     agents/  switchhead-agents  (M5) AgentAdapter + Claude Code / Codex / Gemini / custom, ported from switchyard-agents
     mcp/     switchhead-mcp     (M5) read-only git MCP server, served by `switchhead mcp`
     app/     switchhead-app     GPUI binary `switchhead`
@@ -53,7 +54,7 @@ switchhead/
   docs/DECISIONS.md
 ```
 
-Dependency direction: `app → {git, agents, mcp}`, `mcp → git`. Nothing depends on `app`.
+Dependency direction: `app → {git, hosting, agents, mcp}`, `mcp → git`. Nothing depends on `app`.
 
 ## Architecture rules (do not break these)
 
@@ -162,6 +163,7 @@ Ask before adding anything else. Pin versions in `[workspace.dependencies]`.
 | Serialization | `serde`, `serde_json` |
 | Errors / logs | `thiserror`, `anyhow`, `tracing`, `tracing-subscriber` |
 | Platform | `directories`, `chrono` (`clock` only), `notify` 8 (file events; already in the tree via gpui-component) |
+| Hosting accounts | `reqwest` 0.12 (`blocking`, `json`, `rustls-tls-native-roots`), `keyring` 4 |
 | Testing | `tempfile` |
 
 ## Licensing
@@ -226,6 +228,10 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
   `--resume` then fails ("error_during_execution"). Launch the app with those variables
   unset (every `CLAUDE*` variable, `env -u ...`) to check follow-ups. With a clean environment
   Claude Code resumes from any working directory, so each run's fresh temp dir is fine.
+- Claude's cloud containers route HTTPS through a proxy that adds the owner's GitHub
+  credentials, so api.github.com accepts any token there; check sign-in against a local
+  stand-in server (any `http://127.0.0.1:<port>` site works as a GitHub Enterprise host).
+  Those containers have no Secret Service either: tokens are kept for the session only.
 - Escape typed in a gpui-kit `Input` reaches containers as the app's global `actions::Dismiss`
   (bound with no context), not as a key-down or the input's own `Escape`: a bar that closes
   on Escape handles `Dismiss` (`repo_view/search.rs`).

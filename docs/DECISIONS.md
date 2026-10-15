@@ -151,3 +151,25 @@ has no safe way to quote it. A variable with no value where the command runs (`$
 a commit) stops the run with a message. Output goes to the activity log line by line, like
 git operations. They are the user's own commands and run without the agent rules (those
 apply to the coding CLI, not to the user).
+
+## 2026-10-15 — Hosting accounts: reqwest and keyring, tokens only
+
+Jeremie approved `reqwest` and `keyring` for M6-6. `reqwest` 0.12 with
+`rustls-tls-native-roots` reuses the rustls / ring / hyper stack gpui-kit's own reqwest
+fork already pulls in, so no second TLS stack (no aws-lc). The API code lives in a new
+`switchhead-hosting` crate with blocking calls run on GPUI's background executor.
+
+Accounts sign in with a personal access token (GitHub classic token, GitLab PAT,
+Bitbucket API token with the Atlassian email, Azure DevOps PAT), checked against the
+service before it is kept. OAuth device flows need a registered app per service and are
+left for later. Tokens are stored only in the OS keychain (service `dev.switchhead.app`);
+without one (Linux without a Secret Service) a token is kept in memory for the session and
+never written to disk, because the approved list has no encrypted-vault crates. The state
+file holds the account's site, login and avatar URL only.
+
+Accounts are used for listing repositories to clone, creating pull requests and avatars.
+Clone, fetch and push still go through git and its credential helpers; switchhead never
+puts a token into a remote URL. Without an account for a remote's site, Create Pull
+Request opens the site's own "new pull request" page. Author avatars come from GitHub
+no-reply addresses directly, else from the matching account's service (GitHub per commit,
+GitLab by email), looked up once per email and cached as files in the data folder.

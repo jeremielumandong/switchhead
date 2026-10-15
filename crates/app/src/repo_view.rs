@@ -49,6 +49,7 @@ mod flow_ops;
 mod form;
 mod lfs_ops;
 mod patch_ops;
+mod pr_ops;
 mod rebase;
 mod reflog;
 mod remote_ops;
@@ -663,7 +664,11 @@ impl RepoView {
         let ls = id
             .and_then(|id| self.decorations.get(&id).cloned())
             .unwrap_or_default();
-        self.details.update(cx, |d, cx| d.show(id, ls, cx));
+        let remote = self.main_remote_url().map(str::to_owned);
+        self.details.update(cx, |d, cx| {
+            d.set_remote(remote);
+            d.show(id, ls, cx)
+        });
     }
 
     fn move_selection(&mut self, delta: isize, cx: &mut Context<Self>) {

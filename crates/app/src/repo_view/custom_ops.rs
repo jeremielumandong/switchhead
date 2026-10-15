@@ -112,8 +112,8 @@ impl RepoView {
     }
 }
 
-/// The toolbar's Commands menu: the repository's custom commands, Apply Patch and the
-/// commands editor.
+/// The toolbar's Commands menu: the repository's custom commands, Create Pull Request,
+/// Apply Patch and the commands editor.
 pub(crate) fn build_commands_menu(
     menu: PopupMenu,
     view: &WeakEntity<RepoView>,
@@ -141,7 +141,15 @@ pub(crate) fn build_commands_menu(
     } else {
         menu
     };
+    let view_pr = view.clone();
     menu.separator()
+        .item(
+            PopupMenuItem::new("Create Pull Request…")
+                .disabled(busy)
+                .on_click(move |_, window, cx| {
+                    let _ = view_pr.update(cx, |v, cx| v.create_pull_request(None, window, cx));
+                }),
+        )
         .item(
             PopupMenuItem::new("Apply Patch…")
                 .disabled(busy)
