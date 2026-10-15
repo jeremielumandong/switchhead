@@ -340,7 +340,10 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 
 ## M7 — Release
 
-- [ ] M7-1 Packaging (AppImage, macOS .app/.pkg, Windows installer) from Switchyard's scripts.
+- [x] M7-1 Packaging (AppImage, macOS .app/.pkg, Windows installer) from Switchyard's scripts.
+  `packaging/` (AppImage, universal .app as .dmg and .pkg, per-user NSIS installer, icons,
+  Windows icon resource) and manual release workflows filling one draft release; signing
+  optional. AppImage built and run here; macOS and Windows run in their workflows.
 - [ ] M7-2 Performance CI: open-repo and graph-scroll timings on git/git and linux.
 - [ ] M7-3 Updates, crash logs, docs site.
   Website landed: `site/` (live graph sample from switchhead's own history, tour, themes),
@@ -355,6 +358,8 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - Stash details: also list the untracked files a stash holds (its third parent).
 
 - Cherry-pick and revert of merge commits: ask which parent is the mainline (`-m`).
+
+- Packaging: a `switchhead <path>` command-line launcher on `PATH` (macOS `.pkg`, Windows installer).
 
 - Fetch / Pull / Push dialogs: remember the last choices per repository and default Pull's
   rebase option from `pull.rebase`.

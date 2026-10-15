@@ -226,6 +226,30 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace      # builds throwaway repositories with the real `git`
 ```
 
+## Packages
+
+`packaging/package.sh` builds the installer for the platform it runs on, into `dist/`:
+
+| Platform | Script | Output |
+| --- | --- | --- |
+| Linux | `packaging/linux/build-appimage.sh` | `switchhead-<version>-x86_64.AppImage` |
+| macOS | `packaging/macos/build-macos.sh` | `switchhead-<version>-macos-universal.dmg` and `.pkg` |
+| Windows | `packaging/windows/build-windows.ps1` | `switchhead-<version>-windows-x64-setup.exe` (per-user, no administrator rights) |
+
+The AppImage uses the host's `git`, glibc and GPUI system libraries, so build it on the
+oldest distribution you want to support. The macOS build is ad-hoc signed unless
+`MACOS_SIGN_IDENTITY` (and `MACOS_NOTARY_PROFILE` for notarization) is set; the Windows
+installer is signed with `WINDOWS_SIGN_THUMBPRINT` or `WINDOWS_SIGN_PFX`, or with Azure
+Trusted Signing through `-Sign`. Each script's header lists its options. The icons are
+rendered from `packaging/icons/*.svg` by `packaging/icons/generate.py`.
+
+Releases are built by hand: the Linux, macOS and Windows release workflows (Actions → Run
+workflow, on `main` after CI passed) each attach their package to one draft release for the
+workspace version, which is published once all three are there. macOS signing uses the
+`macos-release` environment's secrets and Windows signing the `windows-release`
+environment's Azure variables; without them the packages are built unsigned and kept as
+workflow artifacts (or uploaded with the `upload_unsigned` input).
+
 ## How it is built
 
 | Crate | What it does |

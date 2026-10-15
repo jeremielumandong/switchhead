@@ -120,6 +120,11 @@ fn main() -> Result<()> {
     // `switchhead mcp --repo <path>`: the read-only git MCP server for an assistant run.
     // Standard output belongs to the protocol, so logs go to standard error only.
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // `switchhead --version`: what the packaging checks run.
+    if args.first().is_some_and(|a| a == "--version") {
+        println!("switchhead {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     if let Some(repo) = switchhead_mcp::repo_arg(&args) {
         tracing_subscriber::fmt()
             .with_writer(std::io::stderr)
