@@ -1,5 +1,5 @@
 {
-  "version": "0.0.1",
+  "version": "0.1.0",
   "url": "https://jeremielumandong.github.io/switchhead/",
-  "notes": ""
+  "notes": "First release: commit graph, staging, rebase, bisect, LFS, submodules, worktrees, git-flow, hosting accounts and the coding-CLI assistant."
 }
