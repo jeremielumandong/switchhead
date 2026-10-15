@@ -272,3 +272,7 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
   `taskkill`) opens its own console window that flashes until it exits. Start them with
   `CREATE_NO_WINDOW` (`cli::no_window`, which `cli::Git` and custom commands already use);
   their own children (ssh, hooks, credential helpers) inherit the hidden console.
+- `std::fs::canonicalize` on Windows returns verbatim paths (`\\?\C:\repo`), which
+  Windows Terminal, PowerShell and `cmd` refuse as a starting folder: use
+  `switchhead_git::paths::canonicalize`. `Path::join("")` adds a trailing separator, and
+  a trailing `\` before a closing quote escapes it (`wt -d "C:\repo\"` gets `C:\repo"`).

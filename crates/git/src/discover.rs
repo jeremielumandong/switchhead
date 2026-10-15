@@ -80,7 +80,7 @@ fn is_bare(dir: &Path) -> bool {
 
 /// What `path` is: the repository it is inside of (walking up), or a plain folder.
 pub fn classify(path: &Path) -> Target {
-    let start = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let start = crate::paths::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let mut cur = Some(start.as_path());
     while let Some(dir) = cur {
         if git_marker(dir).is_some() {
@@ -106,7 +106,7 @@ fn rel_of(root: &Path, p: &Path) -> String {
 /// Every repository under `root` (not `root` itself), at most `max_depth` levels down,
 /// sorted by relative path. Hidden directories are skipped except `.git` markers.
 pub fn scan(root: &Path, max_depth: usize) -> Vec<Found> {
-    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let root = crate::paths::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let queue: Arc<Mutex<VecDeque<(PathBuf, usize)>>> =
         Arc::new(Mutex::new(VecDeque::from([(root.clone(), 0)])));
     let found: Arc<Mutex<Vec<Found>>> = Arc::default();
@@ -212,7 +212,7 @@ mod tests {
     #[test]
     fn classifies_paths() {
         let t = tempfile::tempdir().unwrap();
-        let root = t.path().canonicalize().unwrap();
+        let root = crate::paths::canonicalize(t.path()).unwrap();
         mkrepo(&root.join("r"));
         std::fs::create_dir_all(root.join("r/src/deep")).unwrap();
         assert_eq!(

@@ -49,7 +49,12 @@ impl RepoView {
     ) {
         let repo = self.repo.clone();
         let root = repo.root().to_path_buf();
-        let full = root.join(&path);
+        // `join("")` would add a trailing separator.
+        let full = if path.as_os_str().is_empty() {
+            root.clone()
+        } else {
+            root.join(&path)
+        };
         let tools = tools(cx);
         let failed = move |v: &mut RepoView, e: String, cx: &mut Context<RepoView>| {
             v.op = Some(OpStatus::Failed(format!("{}: {e}", verb(kind)).into()));
