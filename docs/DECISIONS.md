@@ -189,3 +189,20 @@ Release workflows run only by hand (`workflow_dispatch` on `main`, after CI pass
 commit) and fill one draft release per workspace version, like Switchyard's. Signing is
 optional on both macOS and Windows: without the secrets the package is built unsigned and
 kept as a workflow artifact, and goes to the draft only with `upload_unsigned`.
+
+## 2026-10-15 — Updates announce, crash reports stay local
+
+The update check reads a small feed on switchhead's website, `latest.json`
+(`{"version", "url", "notes"}`, published with `site/`), at startup and on demand,
+unauthenticated through the hosting crate's reqwest client, and announces a newer version
+with a link to download it. It does not use GitHub's releases API: the repository is
+private (Jeremie, 2026-10-15), so that API answers 404 to end users. Publishing a release
+means updating `site/latest.json` and redeploying the site; `SWITCHHEAD_UPDATE_URL`
+points the app at another feed for testing. It does not download or install the
+package: Switchyard's in-app installer verifies downloads with `sha2`, which is not on
+switchhead's approved list, so that waits for approval (PLAN.md follow-up). The startup
+check can be turned off in Settings.
+
+A panic writes a plain-text report (version, platform, thread, message, location,
+backtrace) to `<data>/crashes/`, keeping the newest ten, and the next start offers to show
+the newest one once. Reports are never uploaded; the user can attach one to an issue.
