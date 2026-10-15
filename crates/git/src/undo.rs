@@ -205,7 +205,12 @@ pub fn list(repo: &Repo) -> Result<Vec<Snapshot>> {
         let Ok(decoded) = commit.decode() else {
             continue;
         };
-        let time = decoded.committer().map(|c| c.seconds()).unwrap_or_default();
+        // The name's clock reading is the one `snapshot` returned; the commit's own time
+        // can be a second earlier.
+        let time = match stamp(&name) {
+            0 => decoded.committer().map(|c| c.seconds()).unwrap_or_default(),
+            ms => (ms / 1000) as i64,
+        };
         let parents: Vec<Oid> = decoded.parents().collect();
         let message = decoded.message.to_string();
         if let Some(s) = parse(&name, id.detach(), time, &parents, &message) {
