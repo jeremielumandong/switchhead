@@ -376,27 +376,6 @@
   }
   $$('#keyOs button').forEach((b) => b.addEventListener('click', () => buildKeys(b.dataset.os)));
 
-  // ---------------------------------------------------------------- install
-  const REPO = 'https://github.com/jeremielumandong/switchhead';
-  const INSTALL = {
-    linux: { cmd: `git clone ${REPO}\ncd switchhead && cargo run --release -p switchhead-app`, note: 'Installers arrive with the first release. Until then it builds in one command: Rust 1.97+, git, and the GPUI packages listed under Build.' },
-    mac: { cmd: `xcode-select --install   # once\ngit clone ${REPO}\ncd switchhead && cargo run --release -p switchhead-app`, note: 'Installers arrive with the first release. Needs Rust 1.97+ and the Xcode command line tools.' },
-    win: { cmd: `git clone ${REPO}\ncd switchhead; cargo run --release -p switchhead-app`, note: 'Installers arrive with the first release. Needs Rust 1.97+ (MSVC) and Git for Windows.' },
-  };
-  let installOs = /Mac/.test(navigator.platform) ? 'mac' : /Win/.test(navigator.platform) ? 'win' : 'linux';
-  function showInstall(os) {
-    installOs = os;
-    $('#installCmd').innerHTML = INSTALL[os].cmd.split('\n').map((l) => `<span class="p">$ </span>${esc(l)}`).join('\n');
-    $('#installNote').textContent = INSTALL[os].note;
-    $$('#install .install-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.os === os));
-  }
-  $$('#install .install-tabs button').forEach((b) => b.addEventListener('click', () => showInstall(b.dataset.os)));
-  $('#copyInstall').addEventListener('click', async (e) => {
-    const text = INSTALL[installOs].cmd.replace(/\s+#.*$/gm, '');
-    try { await navigator.clipboard.writeText(text); e.target.textContent = 'Copied'; } catch (err) { e.target.textContent = 'Select ↑'; }
-    setTimeout(() => { e.target.textContent = 'Copy'; }, 1600);
-  });
-
   // ---------------------------------------------------------------- assistant demo
   const AI_SCRIPT = [
     ['tool', 'switchhead.status'], ['tool', 'switchhead.diff --staged'], ['tool', 'switchhead.log -n 20'],
@@ -469,5 +448,4 @@
   buildTour();
   buildFeatures();
   buildKeys(/Mac/.test(navigator.platform) ? 'mac' : 'pc');
-  showInstall(installOs);
 })();

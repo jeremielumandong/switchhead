@@ -73,6 +73,9 @@ h2 { font-size: clamp(36px, 5.2vw, 60px); line-height: 1.02; }
 .hero h1 { font-size: clamp(52px, 9vw, 112px); line-height: .95; letter-spacing: -0.055em; }
 .lede { font-size: 18px; color: var(--fg2); max-width: 720px; margin: 32px 0 36px; }
 .lede em { color: var(--fg); font-style: normal; }
+.release { max-width: 640px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--bd); border-radius: 12px; padding: 14px 18px; }
+.release-os { font-size: 12px; color: var(--fg); border: 1px solid var(--bd2); border-radius: 999px; padding: 3px 10px; }
+.release p { margin: 0; color: var(--fg2); font-size: 14.5px; }
 .install { max-width: 640px; background: var(--panel); border: 1px solid var(--bd); border-radius: 12px; overflow: hidden; }
 .install-tabs { display: flex; border-bottom: 1px solid var(--bd); padding: 0 6px; }
 .install-tabs button { background: none; border: 0; padding: 10px 12px; font-size: 13px; color: var(--fg3); border-bottom: 2px solid transparent; margin-bottom: -1px; }

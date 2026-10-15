@@ -34,8 +34,6 @@
       <a href="#features">Features</a>
       <a href="#assistant">AI</a>
       <a href="#themes">Themes</a>
-      <a href="#build">Build</a>
-      <a class="gh" href="https://github.com/jeremielumandong/switchhead">GitHub ↗</a>
     </nav>
     <button class="theme-pill" id="themePill" type="button" aria-label="Pick a theme">
       <span class="dots" id="themeDots"></span>
@@ -53,17 +51,9 @@
   <h1>Every branch,<br>drawn before<br>you blink.</h1>
   <p class="lede">A very fast, native Git client. switchhead reads history in process with gitoxide, streams the commit graph while it is still being read, and runs every change through <em>your own</em> <code>git</code>, so hooks, credential helpers, SSH agents, signing and LFS behave exactly like the command line.</p>
 
-  <div class="install" id="install">
-    <div class="install-tabs" role="tablist">
-      <button role="tab" data-os="linux" class="on">Linux</button>
-      <button role="tab" data-os="mac">macOS</button>
-      <button role="tab" data-os="win">Windows</button>
-    </div>
-    <div class="install-body">
-      <pre class="mono" id="installCmd"></pre>
-      <button class="btn-copy" id="copyInstall" type="button">Copy</button>
-    </div>
-    <p class="install-note" id="installNote"></p>
+  <div class="release">
+    <span class="release-os mono">Linux · macOS · Windows</span>
+    <p>Installers arrive with the first release.</p>
   </div>
 
   <dl class="stats">
@@ -329,7 +319,7 @@
     <div>
       <p class="eyebrow">Status</p>
       <h2>In active development.</h2>
-      <p class="sub">Everything above the "coming next" line works today. The rest is tracked in <a href="https://github.com/jeremielumandong/switchhead/blob/main/PLAN.md">PLAN.md</a>.</p>
+      <p class="sub">Everything above the "coming next" line works today.</p>
     </div>
     <dl class="road">
       <div><dt class="mono">Assistant</dt><dd>Commit messages, conflict resolutions, git command help and branch reviews through a read-only git MCP server.</dd></div>
@@ -341,33 +331,13 @@
   </div>
 </section>
 
-<!-- Build -->
-<section id="build" class="wrap sec">
-  <h2>Build from source.</h2>
-  <p class="sub">Rust 1.97 or newer (pinned in <code>rust-toolchain.toml</code>) and <code>git</code> on your <code>PATH</code>.</p>
-  <div class="build">
-    <div class="code-card"><div class="cc-title">Linux dependencies (Debian / Ubuntu)</div><pre class="mono"><span>$</span> sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
-    libxcb1-dev libvulkan-dev libfontconfig-dev libfreetype-dev libssl-dev pkg-config</pre></div>
-    <div class="code-card"><div class="cc-title">Run</div><pre class="mono"><span>$</span> git clone https://github.com/jeremielumandong/switchhead
-<span>$</span> cd switchhead
-<span>$</span> cargo run --release -p switchhead-app -- ~/code</pre></div>
-    <div class="code-card"><div class="cc-title">Checks</div><pre class="mono"><span>$</span> cargo fmt --all
-<span>$</span> cargo clippy --workspace --all-targets -- -D warnings
-<span>$</span> cargo test --workspace</pre></div>
-  </div>
-  <p class="foot-note">Pass a repository to open it, or a plain folder to scan it for every repository inside.</p>
-</section>
-
 </main>
 
 <footer class="wrap footer">
   <div class="foot-big">switchhead</div>
   <div class="foot-row">
-    <span>Written in Rust on GPUI and gpui-component · MIT · a sibling of <a href="https://github.com/jeremielumandong/switchyard">Switchyard</a></span>
+    <span>Written in Rust on GPUI and gpui-component · a sibling of <a href="https://switchyard.incubarity.com">Switchyard</a></span>
     <nav>
-      <a href="https://github.com/jeremielumandong/switchhead">GitHub</a>
-      <a href="https://github.com/jeremielumandong/switchhead/blob/main/PLAN.md">Plan</a>
-      <a href="https://github.com/GitoxideLabs/gitoxide">gitoxide</a>
       <a href="https://www.gpui.rs/">GPUI</a>
     </nav>
   </div>
