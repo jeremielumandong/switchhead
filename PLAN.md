@@ -260,8 +260,9 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [x] M5-4 Resolve conflicts with AI: per file, proposes merged content; shown as a diff
       against the conflicted file; user accepts / edits / rejects.
   "Resolve with AI" in the merge helper asks the coding CLI (through `conflicts`, `status`, `log`, `show`) for the whole resolved file in one fenced block; the answer's note and a diff against the current result show in place of the cards. Use Proposal puts it in the editor (edit, then Mark Resolved); Discard drops it; answers with markers left or no block are refused. Checked with Claude Code 2.1.300 on a two-sided field conflict: it kept both fields and explained the port choice.
-- [ ] M5-5 Git command helper: "what do you want to do?" → explanation plus commands in a
+- [x] M5-5 Git command helper: "what do you want to do?" → explanation plus commands in a
       ```bash block; each command runs only when the user clicks Run (shown with its output).
+  Git Helper panel beside the history (toolbar and rail Assistant, Ctrl/Cmd+Shift+G, palette): the coding CLI reads the repository through the MCP tools and answers with an explanation and one bash block. `command_line` splits each line like a shell; only plain `git` lines get Run (pipes, `&&`, variables, globs and `<placeholders>` get Copy and a note). Run executes without a shell, shows Done / Failed with the output, and reloads the view; commands that can lose work (reset --hard, restore, clean -f, force push, branch -D, stash drop, rebase...) confirm first. Checked with Claude Code 2.1.300: "undo my last commit" ran `git reset --soft HEAD~1`; "throw away my changes" asked before `git restore`.
 - [ ] M5-6 Branch review (summary and findings for a branch vs its base) and explain-commit.
 - [ ] M5-7 Assistant panel (port Switchyard's), settings (which CLI, model, extra args).
 

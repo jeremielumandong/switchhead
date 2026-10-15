@@ -787,7 +787,7 @@ fn is_delete(kind: Kind) -> bool {
 }
 
 /// A line for a conflict card, with its indentation kept (spaces would collapse).
-fn card_line(l: &str) -> SharedString {
+pub(crate) fn card_line(l: &str) -> SharedString {
     let indent = l.len() - l.trim_start_matches([' ', '\t']).len();
     let lead: String = l[..indent]
         .chars()

@@ -58,6 +58,7 @@ actions!(
         BrowseFiles,
         Undo,
         ToggleActivity,
+        ToggleGitHelper,
     ]
 );
 
@@ -118,6 +119,7 @@ pub fn commands() -> Vec<Command> {
         c("New Tag…", "Tags", NewTag, true),
         c("Push All Tags", "Tags", PushAllTags, true),
         c("Show / Hide Activity", "Window", ToggleActivity, true),
+        c("Git Helper…", "Assistant", ToggleGitHelper, true),
         c(
             "Toggle Inline / Side-by-Side Diff",
             "Diff",
@@ -191,6 +193,7 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("tab", SwitchFileList, Some("Changes && !Input")),
         KeyBinding::new("secondary-shift-enter", WriteCommitMessage, None),
         KeyBinding::new("secondary-shift-b", NewBranch, None),
+        KeyBinding::new("secondary-shift-g", ToggleGitHelper, None),
         KeyBinding::new(
             "secondary-backspace",
             DiscardSelected,
