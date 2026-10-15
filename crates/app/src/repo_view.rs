@@ -52,6 +52,7 @@ mod search;
 mod section_menu;
 mod sidebar;
 mod stash_ops;
+mod submodule_ops;
 mod tag_ops;
 mod tree;
 mod undo;
@@ -215,6 +216,12 @@ impl RepoView {
                 ChangesEvent::Committed => this.check_changes(cx),
                 ChangesEvent::OpenFile { path, blame } => {
                     this.open_file_view(path.clone(), None, *blame, cx)
+                }
+                ChangesEvent::OpenSubmodule(path) => {
+                    cx.emit(RepoViewEvent::Open(this.repo.root().join(path)))
+                }
+                ChangesEvent::UpdateSubmodule(path) => {
+                    this.update_submodules(vec![path.clone()], false, cx)
                 }
                 ChangesEvent::LfsLock { path, lock: true } => this.lfs_lock(path.clone(), cx),
                 ChangesEvent::LfsLock { path, lock: false } => this.lfs_unlock(path.clone(), cx),
@@ -1234,6 +1241,12 @@ impl Render for RepoView {
                 cx.listener(|this, _: &actions::LfsFetchAll, _, cx| this.lfs_fetch(true, cx)),
             )
             .on_action(cx.listener(|this, _: &actions::LfsPull, _, cx| this.lfs_pull(cx)))
+            .on_action(cx.listener(|this, _: &actions::AddSubmodule, w, cx| {
+                this.add_submodule_dialog(w, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::UpdateSubmodules, _, cx| {
+                this.update_submodules(Vec::new(), true, cx)
+            }))
             .on_action(cx.listener(|this, _: &actions::LfsPrune, _, cx| this.lfs_prune(cx)))
             .on_action(
                 cx.listener(|this, _: &actions::LfsRefreshLocks, _, cx| this.load_lfs_locks(cx)),

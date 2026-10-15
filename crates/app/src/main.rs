@@ -37,6 +37,7 @@ mod rich_text;
 mod sidebar_model;
 mod split;
 mod store;
+mod submodule_diff;
 mod theme;
 mod tree_view;
 mod ui;

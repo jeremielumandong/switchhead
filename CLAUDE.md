@@ -238,6 +238,10 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
   locks found; ambiguous" when the server's answer has more than one; the app unlocks by
   `--id`. `git lfs fetch` only fetches the current branch's objects, so older diff sides
   stay pointers until `fetch --all`.
+- `git submodule add` / `update` clone with `GIT_PROTOCOL_FROM_USER=0`, so a local path or
+  `file://` URL fails ("transport 'file' not allowed") unless `protocol.file.allow=always`;
+  tests pass `-c protocol.file.allow=always`, and a manual check can launch the app with
+  `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=protocol.file.allow GIT_CONFIG_VALUE_0=always`.
 - GPUI Kit 0.7.3 runs on the application-patched GPUI Fast stack vendored in `vendor/`
   (a copy of AgentOpsChat's): `compat/*` facades publish GPUI Fast's core under the
   `gpui-pre` 0.3.9 names Kit pins, `gpui` and `gpui_linux` are patched locally, and the

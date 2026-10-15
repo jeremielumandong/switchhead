@@ -43,7 +43,8 @@ impl ChangesView {
                 continue;
             }
             t.paths.push(e.path.clone());
-            if side == Side::Staged || e.conflict().is_some() {
+            // A submodule's changes live in its own repository: nothing to discard or hide here.
+            if side == Side::Staged || e.conflict().is_some() || e.submodule.is_some() {
                 continue;
             }
             match e.kind {
@@ -356,10 +357,37 @@ pub(super) fn build(
                 let _ = view.update(cx, |_, cx| cx.emit(ChangesEvent::OpenFile { path, blame }));
             }
         };
+        let submodule = v
+            .read(cx)
+            .status
+            .entries
+            .iter()
+            .any(|e| &e.path == path && e.submodule.is_some());
         menu = menu
             .separator()
-            .item(PopupMenuItem::new("File History").on_click(open(false)))
-            .item(PopupMenuItem::new("Blame").on_click(open(true)));
+            .item(PopupMenuItem::new("File History").on_click(open(false)));
+        if !submodule {
+            menu = menu.item(PopupMenuItem::new("Blame").on_click(open(true)));
+        }
+        if submodule {
+            let emit = |ev: fn(PathBuf) -> ChangesEvent| {
+                let (view, path) = (view.clone(), path.clone());
+                move |_: &gpui_kit::ClickEvent, _: &mut Window, cx: &mut App| {
+                    let path = path.clone();
+                    let _ = view.update(cx, |_, cx| cx.emit(ev(path)));
+                }
+            };
+            menu = menu
+                .separator()
+                .item(
+                    PopupMenuItem::new("Open Submodule")
+                        .on_click(emit(ChangesEvent::OpenSubmodule)),
+                )
+                .item(
+                    PopupMenuItem::new("Update Submodule")
+                        .on_click(emit(ChangesEvent::UpdateSubmodule)),
+                );
+        }
         if let Some(locked) = &v.read(cx).lfs {
             let lock = !locked.contains(path);
             let (view, path) = (view.clone(), path.clone());

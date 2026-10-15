@@ -83,11 +83,18 @@ pub enum Target {
     Tag(String),
     /// Stash `stash@{n}`: a click shows it in the details pane.
     Stash(usize),
-    /// Open a folder (a worktree or submodule) in a tab.
+    /// Open a folder (a worktree) in a tab.
     Open(PathBuf),
+    /// A submodule (its path in the repository); a cloned one opens in a tab.
+    Submodule {
+        /// Relative to the repository's root.
+        path: PathBuf,
+        /// Cloned (initialized).
+        cloned: bool,
+    },
     /// An LFS lock on this path.
     LfsLock(PathBuf),
-    /// Nothing (the current worktree, an uninitialized submodule).
+    /// Nothing (the current worktree).
     None,
 }
 
@@ -347,10 +354,9 @@ impl RepoView {
                         detail: detail.map(SharedString::from),
                         current: false,
                         rev: None,
-                        target: if s.state == SubmoduleState::Uninitialized {
-                            Target::None
-                        } else {
-                            Target::Open(self.repo.root().join(&s.path))
+                        target: Target::Submodule {
+                            path: s.path.clone(),
+                            cloned: s.state != SubmoduleState::Uninitialized,
                         },
                     }
                 })
@@ -481,6 +487,10 @@ impl RepoView {
             }
             Target::Tag(name) => self.confirm_tag_checkout(name, window, cx),
             Target::Open(path) => cx.emit(RepoViewEvent::Open(path)),
+            Target::Submodule { path, cloned: true } => {
+                cx.emit(RepoViewEvent::Open(self.repo.root().join(path)))
+            }
+            Target::Submodule { cloned: false, .. } => {}
             // A locked file: its history.
             Target::LfsLock(path) => self.open_file_view(path, None, false, cx),
             Target::Stash(_) | Target::None => {}

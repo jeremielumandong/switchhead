@@ -134,8 +134,23 @@ pub struct Entry {
     pub index: Change,
     /// Work tree (unstaged) side: index to work tree.
     pub worktree: Change,
-    /// The path is a submodule.
-    pub submodule: bool,
+    /// The path is a submodule: its state.
+    pub submodule: Option<SubmoduleStatus>,
+}
+
+/// A submodule's line in status (`S<c><m><u>` and its HEAD and index commits).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SubmoduleStatus {
+    /// The commit HEAD records (`None` when added in the index).
+    pub head: Option<Oid>,
+    /// The commit the index records (`None` when deleted).
+    pub index: Option<Oid>,
+    /// Its checkout is at another commit than the index records.
+    pub moved: bool,
+    /// Its work tree has changes to tracked files.
+    pub modified: bool,
+    /// Its work tree has untracked files.
+    pub untracked: bool,
 }
 
 impl Entry {
@@ -270,8 +285,19 @@ fn xy(field: &[u8]) -> Result<(u8, u8)> {
     }
 }
 
-fn is_submodule(field: &[u8]) -> bool {
-    field.first() == Some(&b'S')
+/// The `sub` field (`N...` or `S<c><m><u>`) with the record's HEAD and index ids.
+fn submodule(field: &[u8], head: &[u8], index: &[u8]) -> Option<SubmoduleStatus> {
+    let [b'S', c, m, u] = field else {
+        return None;
+    };
+    let id = |hex: &[u8]| Oid::from_hex(hex).ok().filter(|o| !o.is_null());
+    Some(SubmoduleStatus {
+        head: id(head),
+        index: id(index),
+        moved: *c == b'C',
+        modified: *m == b'M',
+        untracked: *u == b'U',
+    })
 }
 
 /// Parse `git status --porcelain=v2 -z --branch` output.
@@ -319,7 +345,7 @@ pub fn parse(out: &[u8]) -> Result<Status> {
                     kind: EntryKind::Ordinary,
                     index: Change::from_char(x)?,
                     worktree: Change::from_char(y)?,
-                    submodule: is_submodule(f[2]),
+                    submodule: submodule(f[2], f[6], f[7]),
                 });
             }
             b'2' => {
@@ -338,7 +364,7 @@ pub fn parse(out: &[u8]) -> Result<Status> {
                     kind: EntryKind::Renamed { score },
                     index: Change::from_char(x)?,
                     worktree: Change::from_char(y)?,
-                    submodule: is_submodule(f[2]),
+                    submodule: submodule(f[2], f[6], f[7]),
                 });
             }
             b'u' => {
@@ -351,7 +377,7 @@ pub fn parse(out: &[u8]) -> Result<Status> {
                     kind: EntryKind::Unmerged(Conflict::from_xy(x, y)?),
                     index: Change::Unmerged,
                     worktree: Change::Unmerged,
-                    submodule: is_submodule(f[2]),
+                    submodule: submodule(f[2], f[8], f[9]),
                 });
             }
             b'?' | b'!' => {
@@ -367,7 +393,7 @@ pub fn parse(out: &[u8]) -> Result<Status> {
                     kind,
                     index: Change::Unmodified,
                     worktree: change,
-                    submodule: false,
+                    submodule: None,
                 });
             }
             _ => return Err(Error::Parse(text())),
@@ -506,7 +532,9 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
         let renamed = &s.entries[4];
         assert_eq!(renamed.kind, EntryKind::Renamed { score: 87 });
         assert_eq!(renamed.orig_path, Some(PathBuf::from("old name.txt")));
-        assert!(s.entries[3].submodule);
+        let sub = s.entries[3].submodule.as_ref().unwrap();
+        assert!(sub.moved && !sub.modified && !sub.untracked);
+        assert!(s.entries[0].submodule.is_none());
         assert_eq!(s.entries[2].worktree, Change::Deleted);
         assert_eq!(s.entries[5].conflict(), Some(Conflict::BothModified));
         assert_eq!(s.entries[7].kind, EntryKind::Ignored);

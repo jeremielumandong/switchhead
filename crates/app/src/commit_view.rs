@@ -712,8 +712,8 @@ impl CommitView {
 fn compute(repo: &Repo, f: &FileChange, prefs: &DiffPrefs, theme: &Arc<HighlightTheme>) -> Content {
     if f.submodule {
         return Content::Submodule {
-            old: f.old_id,
-            new: f.new_id,
+            path: f.path.to_string_lossy().replace('\\', "/"),
+            diff: Box::new(repo.submodule_diff(&f.path, f.old_id, f.new_id)),
         };
     }
     let read = |id: Option<Oid>| id.map(|id| diff::read_blob(repo, id)).transpose();

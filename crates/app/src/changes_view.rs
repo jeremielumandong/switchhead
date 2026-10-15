@@ -107,6 +107,10 @@ pub enum ChangesEvent {
         /// Blame (else history).
         blame: bool,
     },
+    /// Open the submodule at this path in a tab.
+    OpenSubmodule(std::path::PathBuf),
+    /// Update the submodule at this path (check out the commit the index records).
+    UpdateSubmodule(std::path::PathBuf),
     /// Lock (`true`) or unlock a file with LFS.
     LfsLock {
         /// The file.
@@ -995,6 +999,9 @@ fn local_diff(
         let note = "This file has conflicts. Resolve them in the file, then stage it.";
         return (Content::Failed(note.into()), None);
     }
+    if let Some(sub) = &e.submodule {
+        return (submodule_diff(repo, e, sub, side), None);
+    }
     if e.kind == status::EntryKind::Untracked {
         let full = repo.root().join(&e.path);
         let content = match std::fs::read(&full) {
@@ -1025,6 +1032,33 @@ fn local_diff(
             ),
         },
         Err(err) => (Content::Failed(err.to_string()), None),
+    }
+}
+
+/// A submodule's commits: index to checkout (with its work-tree state), or HEAD to index.
+fn submodule_diff(
+    repo: &Repo,
+    e: &status::Entry,
+    sub: &status::SubmoduleStatus,
+    side: Side,
+) -> Content {
+    let diff = match side {
+        Side::Unstaged => {
+            let new = if sub.moved {
+                repo.submodule_head(&e.path)
+            } else {
+                sub.index
+            };
+            let mut d = repo.submodule_diff(&e.path, sub.index, new);
+            d.modified = sub.modified;
+            d.untracked = sub.untracked;
+            d
+        }
+        Side::Staged => repo.submodule_diff(&e.path, sub.head, sub.index),
+    };
+    Content::Submodule {
+        path: e.path.to_string_lossy().replace('\\', "/"),
+        diff: Box::new(diff),
     }
 }
 

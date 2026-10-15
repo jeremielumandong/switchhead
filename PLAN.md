@@ -275,7 +275,12 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
       through `.git/lfs/objects` (a note says how to fetch a missing side); palette Fetch /
       Fetch All / Pull / Prune; LFS Locks sidebar (Unlock, Force Unlock by lock id) and
       Lock / Unlock in Local Changes. Locks section hides when the server has none.
-- [ ] M6-2 Submodules: add, update (init/recursive), open as tab, show changes.
+- [x] M6-2 Submodules: add, update (init/recursive), open as tab, show changes.
+      Landed: `git::submodules` (add / update args, `submodule_diff` lists the commits
+      added and removed via a `log` in the submodule's clone); status keeps each
+      submodule's commits and dirty flags. Diff panes (commits and Local Changes) show the
+      commit move, those commits and work-tree state; Add Submodule… dialog, Update / Clone
+      (recursive) from the sidebar, palette and Local Changes; Open Submodule opens a tab.
 - [ ] M6-3 Worktrees: list, add, remove, open as tab.
 - [ ] M6-4 Git-flow (init, start/finish feature, release, hotfix).
 - [ ] M6-5 Custom commands (user-defined, with variables like `${ref}` `${sha}` `${file}`).
