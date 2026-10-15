@@ -21,6 +21,7 @@ pub mod identity;
 pub mod lfs;
 pub mod log;
 pub mod ops;
+pub mod patch;
 pub mod rebase;
 pub mod reflog;
 pub mod refs;

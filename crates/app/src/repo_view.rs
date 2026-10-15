@@ -17,7 +17,7 @@ use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::resizable::{ResizableState, resizable_panel, v_resizable};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Context, Entity, FocusHandle, Focusable, FontWeight, Hsla,
+    AnyElement, App, Context, Entity, ExternalPaths, FocusHandle, Focusable, FontWeight, Hsla,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, ScrollStrategy, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, Task, UniformListScrollHandle,
     Window, canvas, div, px, uniform_list,
@@ -48,6 +48,7 @@ mod file_history;
 mod flow_ops;
 mod form;
 mod lfs_ops;
+mod patch_ops;
 mod rebase;
 mod reflog;
 mod remote_ops;
@@ -1232,6 +1233,16 @@ impl Render for RepoView {
             .track_focus(&self.focus)
             .size_full()
             .flex()
+            // Patch files dropped on the tab are offered for applying.
+            .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
+                let patches: Vec<_> = paths
+                    .paths()
+                    .iter()
+                    .filter(|p| patch_ops::is_patch_file(p))
+                    .cloned()
+                    .collect();
+                this.apply_patches_dialog(patches, window, cx);
+            }))
             .on_action(
                 cx.listener(|this, _: &actions::SelectUp, _, cx| this.move_selection(-1, cx)),
             )
@@ -1344,6 +1355,7 @@ impl Render for RepoView {
                 this.update_submodules(Vec::new(), true, cx)
             }))
             .on_action(cx.listener(|this, _: &actions::LfsPrune, _, cx| this.lfs_prune(cx)))
+            .on_action(cx.listener(|this, _: &actions::ApplyPatch, w, cx| this.pick_patches(w, cx)))
             .on_action(
                 cx.listener(|this, _: &actions::LfsRefreshLocks, _, cx| this.load_lfs_locks(cx)),
             )

@@ -112,7 +112,8 @@ impl RepoView {
     }
 }
 
-/// The toolbar's Commands menu: the repository's custom commands, and the editor.
+/// The toolbar's Commands menu: the repository's custom commands, Apply Patch and the
+/// commands editor.
 pub(crate) fn build_commands_menu(
     menu: PopupMenu,
     view: &WeakEntity<RepoView>,
@@ -123,6 +124,7 @@ pub(crate) fn build_commands_menu(
         .try_global::<CustomCommands>()
         .is_none_or(|c| c.for_target(CommandTarget::Repository).is_empty());
     let view_r = view.clone();
+    let view_p = view.clone();
     let menu = custom_commands::add_to_menu(
         menu,
         CommandTarget::Repository,
@@ -139,9 +141,17 @@ pub(crate) fn build_commands_menu(
     } else {
         menu
     };
-    menu.separator().item(
-        PopupMenuItem::new("Edit Custom Commands…").on_click(|_, window, cx| {
-            window.dispatch_action(Box::new(crate::actions::EditCustomCommands), cx)
-        }),
-    )
+    menu.separator()
+        .item(
+            PopupMenuItem::new("Apply Patch…")
+                .disabled(busy)
+                .on_click(move |_, window, cx| {
+                    let _ = view_p.update(cx, |v, cx| v.pick_patches(window, cx));
+                }),
+        )
+        .item(
+            PopupMenuItem::new("Edit Custom Commands…").on_click(|_, window, cx| {
+                window.dispatch_action(Box::new(crate::actions::EditCustomCommands), cx)
+            }),
+        )
 }

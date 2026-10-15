@@ -1,6 +1,7 @@
 //! The graph's right-click menu for a commit: check out, new branch or tag here,
-//! cherry-pick, revert, reset the current branch here, copy its id or message, save it as
-//! a patch, and open it on GitHub / GitLab / Bitbucket.
+//! cherry-pick, revert, reset the current branch here, copy its id or message, save it
+//! (or it and the commits up to HEAD) as patches or copy it as one, and open it on
+//! GitHub / GitLab / Bitbucket.
 
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::ButtonVariant;
@@ -341,6 +342,17 @@ pub(super) fn build_commit_menu(
             PopupMenuItem::new("Save as Patch…")
                 .disabled(busy)
                 .on_click(act(Box::new(move |v, w, cx| v.save_patch(id, w, cx)))),
+        )
+        .item(
+            PopupMenuItem::new("Save Patches from Here to HEAD…")
+                .disabled(busy || is_head)
+                .on_click(act(Box::new(move |v, w, cx| {
+                    v.save_patches_to_head(id, w, cx)
+                }))),
+        )
+        .item(
+            PopupMenuItem::new("Copy as Patch")
+                .on_click(act(Box::new(move |v, _, cx| v.copy_patch(id, cx)))),
         );
     if let Some((forge, url)) = web {
         menu = menu.item(
