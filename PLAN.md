@@ -250,9 +250,10 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [x] M5-1 Port `switchyard-agents` as `switchhead-agents` (Claude Code, Codex CLI, Gemini
       CLI, custom; private temp dir; cancel; stream parsing). Git system prompt.
   `crates/agents` is Switchyard's crate with the MCP server renamed `switchhead` (`switchhead mcp`, `SWITCHHEAD_*` env) and a git system prompt (read-only tools; proposals as a message, resolved files or a ```bash block). Adapters, runner, private temp dir, cancel and the replay tests came over unchanged; the replay fixtures still hold Switchyard's tool names, which only exercise the parsers.
-- [ ] M5-2 `switchhead-mcp`: read-only git MCP server (`switchhead mcp`, hidden argument
+- [x] M5-2 `switchhead-mcp`: read-only git MCP server (`switchhead mcp`, hidden argument
       checked in `main` before GPUI starts): `status`, `log`, `show`, `diff` (staged /
       unstaged / range), `branches`, `blame`, `file_at`, `conflicts`. Scoped to one repo.
+  `crates/mcp`: Switchyard's stdio JSON-RPC server made blocking, and `GitTools`, each tool one read-only `git` call (no optional locks, `--no-ext-diff`) in the repository given as `switchhead mcp --repo <path>` (checked in `main` before logging and GPUI; logs go to stderr). Revisions that look like options and paths outside the work tree are refused; output is capped at 60 KB with a note. Tested on throwaway repos, including a conflicted merge; checked by piping JSON-RPC into the built binary.
 - [ ] M5-3 Generate commit message from the staged diff (button in the commit box; follows
       the repo's recent message style; conventional commits option).
 - [ ] M5-4 Resolve conflicts with AI: per file, proposes merged content; shown as a diff

@@ -7180,6 +7180,7 @@ dependencies = [
  "serde",
  "serde_json",
  "switchhead-git",
+ "switchhead-mcp",
  "tempfile",
  "tokio",
  "tracing",
@@ -7194,6 +7195,17 @@ dependencies = [
  "notify",
  "tempfile",
  "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
+name = "switchhead-mcp"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "switchhead-git",
+ "tempfile",
  "tracing",
 ]
 

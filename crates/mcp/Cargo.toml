@@ -1,0 +1,19 @@
+[package]
+name = "switchhead-mcp"
+description = "Read-only git MCP server, served by `switchhead mcp`"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+switchhead-git = { path = "../git" }
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
