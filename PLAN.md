@@ -299,7 +299,13 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
       (`cli::run_shell`, see DECISIONS); output streams to the activity log.
 - [ ] M6-6 Hosting accounts (GitHub, GitLab, Bitbucket, Azure DevOps): clone from account,
       create pull request, avatars.
-- [ ] M6-7 Patches: create from commits, apply patch / `git am`.
+- [x] M6-7 Patches: create from commits, apply patch / `git am`.
+      Landed: commit menu Save as Patch…, Save Patches from Here to HEAD… (numbered
+      `format-patch` files; refuses commits off the current branch) and Copy as Patch;
+      Apply Patch… (palette, Commands menu, or dropping .patch/.diff/.eml/.mbox files on a
+      tab) shows the commits and files and whether they apply cleanly, then commits
+      (`git am`), applies, or applies and stages, optionally with a three-way merge; a
+      stopped `am` uses the existing conflict banner (`switchhead_git::patch`).
 - [ ] M6-8 GPG / SSH commit signing settings and verified badges.
 - [ ] M6-9 Open in terminal / editor / file manager; external diff and merge tools.
 - [ ] M6-10 Bisect UI (good / bad / skip, highlighted in the graph), guided: a step panel
