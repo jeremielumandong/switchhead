@@ -281,7 +281,11 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
       submodule's commits and dirty flags. Diff panes (commits and Local Changes) show the
       commit move, those commits and work-tree state; Add Submodule… dialog, Update / Clone
       (recursive) from the sidebar, palette and Local Changes; Open Submodule opens a tab.
-- [ ] M6-3 Worktrees: list, add, remove, open as tab.
+- [x] M6-3 Worktrees: list, add, remove, open as tab.
+      Landed: Add Worktree… (an existing branch is checked out, a new name is created from
+      HEAD; default folder `<repo>-<branch>` beside the repo; opens in a tab when done) from
+      the palette, the Worktrees menu and a branch's "Check Out in New Worktree…"; Remove…
+      (optional force), Lock / Unlock, Prune; `RepoView::run_op_then` runs a step on success.
 - [ ] M6-4 Git-flow (init, start/finish feature, release, hotfix).
 - [ ] M6-5 Custom commands (user-defined, with variables like `${ref}` `${sha}` `${file}`).
 - [ ] M6-6 Hosting accounts (GitHub, GitLab, Bitbucket, Azure DevOps): clone from account,

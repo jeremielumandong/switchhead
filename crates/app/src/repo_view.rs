@@ -56,6 +56,7 @@ mod submodule_ops;
 mod tag_ops;
 mod tree;
 mod undo;
+mod worktree_ops;
 
 use sidebar::{Section, SideRow};
 
@@ -88,6 +89,9 @@ pub enum RepoViewEvent {
 }
 
 impl gpui_kit::EventEmitter<RepoViewEvent> for RepoView {}
+
+/// A step to run after an operation succeeds.
+type OpThen = Box<dyn FnOnce(&mut RepoView, &mut Context<RepoView>)>;
 
 /// A git operation started from the toolbar.
 #[derive(Clone, Debug)]
@@ -155,6 +159,8 @@ pub struct RepoView {
     menu_row: Option<usize>,
     /// Cancels the running operation.
     op_cancel: Option<Cancel>,
+    /// What to do when the running operation succeeds ([`RepoView::run_op_then`]).
+    op_then: Option<OpThen>,
     activity: Activity,
     /// The activity panel is open.
     pub activity_open: bool,
@@ -254,6 +260,7 @@ impl RepoView {
             side_rows: Vec::new(),
             menu_row: None,
             op_cancel: None,
+            op_then: None,
             activity: Activity::default(),
             activity_open: false,
             activity_collapsed: HashSet::new(),
@@ -800,10 +807,14 @@ impl RepoView {
                             } else if e.is_empty() {
                                 v.activity.finish(entry, Outcome::Done, "");
                                 v.op = Some(OpStatus::Done(done.into()));
+                                if let Some(then) = v.op_then.take() {
+                                    then(v, cx);
+                                }
                             } else {
                                 v.activity.finish(entry, Outcome::Failed, &e);
                                 v.op = Some(OpStatus::Failed(crate::activity::summary(&e).into()));
                             }
+                            v.op_then = None;
                             v.reload(cx);
                         }
                     }
@@ -814,6 +825,24 @@ impl RepoView {
                 }
             }
         }));
+    }
+
+    /// [`RepoView::run_op`], then `then` once it succeeds.
+    pub fn run_op_then(
+        &mut self,
+        label: &'static str,
+        done: &'static str,
+        f: impl FnOnce(&Repo, &Cancel, &mut dyn FnMut(&str)) -> switchhead_git::Result<()>
+        + Send
+        + 'static,
+        then: impl FnOnce(&mut RepoView, &mut Context<RepoView>) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        if matches!(self.op, Some(OpStatus::Running { .. })) {
+            return;
+        }
+        self.run_op(label, done, f, cx);
+        self.op_then = Some(Box::new(then));
     }
 
     /// Stop the running operation (git is killed; the repository is left as git leaves it).
@@ -1244,6 +1273,12 @@ impl Render for RepoView {
             .on_action(cx.listener(|this, _: &actions::AddSubmodule, w, cx| {
                 this.add_submodule_dialog(w, cx)
             }))
+            .on_action(cx.listener(|this, _: &actions::AddWorktree, w, cx| {
+                this.add_worktree_dialog(None, w, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &actions::PruneWorktrees, _, cx| this.prune_worktrees(cx)),
+            )
             .on_action(cx.listener(|this, _: &actions::UpdateSubmodules, _, cx| {
                 this.update_submodules(Vec::new(), true, cx)
             }))

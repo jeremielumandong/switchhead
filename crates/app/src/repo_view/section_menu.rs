@@ -86,7 +86,15 @@ pub(super) fn build_section_menu(
                         "Update All Recursively",
                         Box::new(|v, _, cx| v.update_submodules(Vec::new(), true, cx)),
                     )),
-                Section::Worktrees => menu,
+                Section::Worktrees => menu
+                    .item(item(
+                        "Add Worktree…",
+                        Box::new(|v, w, cx| v.add_worktree_dialog(None, w, cx)),
+                    ))
+                    .item(item(
+                        "Prune Missing Worktrees",
+                        Box::new(|v, _, cx| v.prune_worktrees(cx)),
+                    )),
                 Section::LfsLocks => menu.item(
                     PopupMenuItem::new("Refresh Locks")
                         .on_click(act(Box::new(|v, _, cx| v.load_lfs_locks(cx)))),

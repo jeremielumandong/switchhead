@@ -662,6 +662,34 @@ impl Repo {
         Ok(())
     }
 
+    /// Lock a linked worktree against pruning, with an optional reason.
+    pub fn worktree_lock(&self, path: &Path, reason: Option<&str>) -> Result<()> {
+        let mut args = vec![os("worktree"), os("lock")];
+        if let Some(r) = reason {
+            args.push(os("--reason"));
+            args.push(os(r));
+        }
+        args.push(path.as_os_str().to_owned());
+        self.run_git(args)?;
+        Ok(())
+    }
+
+    /// Unlock a linked worktree.
+    pub fn worktree_unlock(&self, path: &Path) -> Result<()> {
+        self.run_git(vec![
+            os("worktree"),
+            os("unlock"),
+            path.as_os_str().to_owned(),
+        ])?;
+        Ok(())
+    }
+
+    /// Forget worktrees whose folders are gone (`git worktree prune`).
+    pub fn worktree_prune(&self) -> Result<()> {
+        self.run_git(vec![os("worktree"), os("prune")])?;
+        Ok(())
+    }
+
     /// Run a `git lfs` subcommand (`pull`, `fetch`, `prune`, `lock <path>`...).
     pub fn lfs(&self, args: &[&str], cancel: &Cancel, on_line: impl FnMut(&str)) -> Result<()> {
         let mut all = vec!["lfs"];
@@ -1123,7 +1151,16 @@ mod tests {
         let wt = out.path().join("wt");
         r.worktree_add(&wt, "HEAD", Some("wt-branch")).unwrap();
         assert!(wt.join("a.txt").exists());
+        r.worktree_lock(&wt, Some("on a USB disk")).unwrap();
+        let listed = crate::worktrees::list_worktrees(&r).unwrap();
+        assert!(listed.iter().any(|w| w.locked));
+        r.worktree_unlock(&wt).unwrap();
         r.worktree_remove(&wt, false).unwrap();
+        // A worktree whose folder is deleted is pruned.
+        r.worktree_add(&wt, "HEAD", Some("wt-gone")).unwrap();
+        std::fs::remove_dir_all(&wt).unwrap();
+        r.worktree_prune().unwrap();
+        assert_eq!(crate::worktrees::list_worktrees(&r).unwrap().len(), 1);
 
         r.bisect_start("HEAD", "HEAD~1").unwrap();
         assert_eq!(r.state(), RepoState::Bisect);

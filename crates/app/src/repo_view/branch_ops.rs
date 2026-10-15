@@ -332,6 +332,52 @@ pub(super) fn build_ref_menu(
             let _ = view.update(cx, |v, cx| f(v, window, cx));
         }
     };
+    if let Target::Worktree {
+        path,
+        current,
+        main,
+        locked,
+        missing,
+    } = &target
+    {
+        let busy = v.read(cx).busy();
+        let text = path.to_string_lossy().into_owned();
+        let (open, remove, lock) = (path.clone(), path.clone(), path.clone());
+        let (locked, missing) = (*locked, *missing);
+        let mut menu = menu;
+        if !*current && !missing {
+            menu = menu
+                .item(PopupMenuItem::new("Open in New Tab").on_click(act(Box::new(
+                    move |_, _, cx| cx.emit(super::RepoViewEvent::Open(open.clone())),
+                ))))
+                .separator();
+        }
+        if !*main {
+            menu = menu
+                .item(
+                    PopupMenuItem::new(if locked { "Unlock" } else { "Lock" })
+                        .disabled(busy)
+                        .on_click(act(Box::new(move |v, _, cx| {
+                            v.lock_worktree(lock.clone(), !locked, cx)
+                        }))),
+                )
+                .item(
+                    PopupMenuItem::new(if missing { "Prune" } else { "Remove…" })
+                        .disabled(busy || *current || locked)
+                        .on_click(act(Box::new(move |v, w, cx| {
+                            if missing {
+                                v.prune_worktrees(cx)
+                            } else {
+                                v.remove_worktree_dialog(remove.clone(), w, cx)
+                            }
+                        }))),
+                )
+                .separator();
+        }
+        return menu.item(PopupMenuItem::new("Copy Path").on_click(move |_, _, cx| {
+            cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text.clone()))
+        }));
+    }
     if let Target::Submodule { path, cloned } = &target {
         let busy = v.read(cx).busy();
         let full = v.read(cx).repo.root().join(path);
@@ -483,6 +529,20 @@ pub(super) fn build_ref_menu(
                         v.review_branch(b5.clone(), base, window, cx)
                     }
                 }))),
+            );
+            let b6 = b.clone();
+            let elsewhere = v
+                .read(cx)
+                .refs
+                .worktrees
+                .iter()
+                .any(|w| w.branch.as_deref() == Some(b.as_str()));
+            menu = menu.item(
+                PopupMenuItem::new("Check Out in New Worktree…")
+                    .disabled(is_current || elsewhere)
+                    .on_click(act(Box::new(move |v, window, cx| {
+                        v.add_worktree_dialog(Some(b6.clone()), window, cx)
+                    }))),
             );
             let b4 = b.clone();
             menu = menu.item(PopupMenuItem::new("Show Reflog").on_click(act(Box::new(

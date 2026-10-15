@@ -4,7 +4,7 @@
 //! once per refresh, after the log, so the spawn is off the hot path. A repository without
 //! a `.gitmodules` file skips the submodule spawn.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::{Oid, Repo, Result};
 
@@ -49,6 +49,30 @@ pub struct Submodule {
     pub id: Option<Oid>,
     /// Checkout state.
     pub state: SubmoduleState,
+}
+
+/// Where a new worktree for `branch` goes by default: a sibling of the repository's
+/// folder named `<repo>-<branch>` (slashes in the branch become dashes).
+pub fn default_path(root: &Path, branch: &str) -> PathBuf {
+    let name = root
+        .file_name()
+        .map_or_else(|| "worktree".into(), |n| n.to_string_lossy().into_owned());
+    let branch: String = branch
+        .chars()
+        .map(|c| {
+            if matches!(c, '/' | '\\' | ':') {
+                '-'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let folder = if branch.is_empty() {
+        format!("{name}-worktree")
+    } else {
+        format!("{name}-{branch}")
+    };
+    root.parent().unwrap_or(root).join(folder)
 }
 
 /// Every worktree, the main one first.
@@ -221,6 +245,18 @@ mod tests {
         assert_eq!(s[0].path, PathBuf::from("dep"));
         assert_eq!(s[0].state, SubmoduleState::Current);
         let _ = std::fs::remove_dir_all(&wt);
+    }
+
+    #[test]
+    fn default_paths_are_siblings() {
+        assert_eq!(
+            default_path(Path::new("/src/app"), "feature/login"),
+            PathBuf::from("/src/app-feature-login")
+        );
+        assert_eq!(
+            default_path(Path::new("/src/app"), ""),
+            PathBuf::from("/src/app-worktree")
+        );
     }
 
     #[test]
