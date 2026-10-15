@@ -264,3 +264,7 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
   variables: pass them as arguments to a nested `sh -c`, or it sees them empty. Without
   `diff.tool` (or `merge.tool`) git difftool falls back to terminal tools such as vimdiff,
   which hang with no terminal, so the app refuses to run it until a tool is chosen.
+- gix's topo walk, like git's, computes in-degrees down to the lowest generation among its
+  tips before yielding, so an old tag as a tip makes the first batch walk almost the whole
+  history even with a commit-graph (linux: 2.7 s with its tags, git's `--branches` 17 ms).
+  `crates/git/examples/perf.rs` (and the Performance workflow) measures it.

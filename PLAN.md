@@ -344,7 +344,11 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   `packaging/` (AppImage, universal .app as .dmg and .pkg, per-user NSIS installer, icons,
   Windows icon resource) and manual release workflows filling one draft release; signing
   optional. AppImage built and run here; macOS and Windows run in their workflows.
-- [ ] M7-2 Performance CI: open-repo and graph-scroll timings on git/git and linux.
+- [x] M7-2 Performance CI: open-repo and graph-scroll timings on git/git and linux.
+  `.github/workflows/perf.yml` runs `crates/git/examples/perf.rs` on treeless clones with a
+  commit-graph (cached weekly) and writes the numbers to the job summary. git/git meets its
+  budget (first rows 87 ms here); linux does not (2.7 s), so its CI limit is a regression
+  guard for now (see Follow-ups).
 - [ ] M7-3 Updates, crash logs, docs site.
   Website landed: `site/` (live graph sample from switchhead's own history, tour, themes),
   published by `.github/workflows/pages.yml` (run by hand only); updates and crash logs still to do.
@@ -360,6 +364,8 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - Cherry-pick and revert of merge commits: ask which parent is the mainline (`-m`).
 
 - Packaging: a `switchhead <path>` command-line launcher on `PATH` (macOS `.pkg`, Windows installer).
+
+- Log walk on linux: first rows take 2.7 s (budget 500 ms) because its ~950 tags are tips and gix's topo walk computes in-degrees down to the oldest tip's generation before yielding (git does the same: `git log --all --date-order -n 300` takes 5 s, `--branches` 17 ms). Explore lazily, only down to the generation of the next commit to show; then lower linux's limit in `perf.yml` to 1000 ms. The whole walk (34 s for 1.48M commits) is also slow.
 
 - Fetch / Pull / Push dialogs: remember the last choices per repository and default Pull's
   rebase option from `pull.rebase`.
