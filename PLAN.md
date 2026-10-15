@@ -10,7 +10,9 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
       fonts and Lucide license copied. *Pushed on `claude/scaffold`.*
 - [x] M0-2 CI (`.github/workflows/ci.yml` from Switchyard: fmt, clippy, test on Linux/macOS/Windows).
       *fmt job plus clippy + tests on all three OSes; no integration jobs needed (tests use `git`).*
-- [ ] M0-3 README with screenshots, install, build instructions.
+- [x] M0-3 README with screenshots, install, build instructions.
+      *Features with screenshots (history tools, assistant, advanced), Install, Packages,
+      Building from source; "Coming next" removed now that it has all landed.*
 
 ## M1 — Git engine (`crates/git`)
 
@@ -20,26 +22,27 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
       skip list, never inside a found repo, linked worktrees flagged). *Tests written.*
 - [x] M1-3 `repo::Repo`: thread-safe gix handle, root/git dir/name, `head()`, `state()`
       (merge/rebase/...), identity, `resolve(rev)`. *Tests written.*
-- [ ] M1-4 `log`: streaming walk in date order (gix topo `DateOrder` + commit-graph) over all
+- [x] M1-4 `log`: streaming walk in date order (gix topo `DateOrder` + commit-graph) over all
       refs (or HEAD / chosen branches), batches into a columnar `CommitLog` (ids, parents,
       interned authors, times, summary arena, id→row map). Cancellable. Benchmark on a big
       repo (git/git, linux) and log first-batch and full times. *`log::walk` / `CommitLog`
       (mailmap applied, authors interned, summaries in one arena), `examples/log_bench.rs`.
       git/git (85,563 commits, `--all`): with a commit-graph file 94 ms to the first batch,
       1.26 s in all (`git log --all --date-order` 2.4 s); without one 1.9 s / 3.2 s, see
-      Follow-ups. linux not measured yet.*
-- [ ] M1-5 `graph`: incremental lane layout (lanes hold the next expected commit; merges join,
+      Follow-ups. linux (1.48M commits, ~950 tags): 2.7 s to the first batch, 34 s in all,
+      measured by `examples/perf.rs` in the Performance workflow (M7-2, Follow-ups).*
+- [x] M1-5 `graph`: incremental lane layout (lanes hold the next expected commit; merges join,
       branches fork; colors follow first-parent lines); rows as top/bottom segments in one
       arena. Tests on linear, branch/merge, octopus, criss-cross, and out-of-order histories.
       *`graph::Layout` / `GraphRows`; each `log::Batch` carries its rows. Tests check that
       every row's bottom edge meets the next row's top edge. git/git's widest row is 282
       lanes (git's own graph ~190), see Follow-ups.*
-- [ ] M1-6 `refs`: local branches (upstream, ahead/behind via `for-each-ref --format
+- [x] M1-6 `refs`: local branches (upstream, ahead/behind via `for-each-ref --format
       %(upstream:track)`), remotes, tags (annotated peeled), stashes (reflog), HEAD;
       decorations map id → labels for the graph. *`refs::load` (gix, tags peeled, stash
       reflog) and `refs::load_tracking` (one `for-each-ref`, can arrive later);
       `Refs::decorations`.*
-- [ ] M1-7 `status`: `git status --porcelain=v2 -z --branch` parser (ordinary, renamed,
+- [x] M1-7 `status`: `git status --porcelain=v2 -z --branch` parser (ordinary, renamed,
       unmerged, untracked, ignored), staged vs unstaged lists, branch header.
       *`status::status` / `parse`; paths are `PathBuf` (not always UTF-8).*
 - [x] M1-8 `diff`: commit file list (gix tree diff, renames), per-file blob diff (imara
@@ -388,7 +391,6 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
   --reachable` in the background on open, or start with a time-ordered walk and re-sort.
 - Graph width: lanes keep their slot, so busy histories get wider than git's own graph.
   Compact lanes (shift right lanes left with diagonal segments) if wide graphs look bad.
-- README (M0-3) waits for the app shell (M2) for screenshots.
 - Word highlights for `git diff` output (`parse_unified`): pair each hunk's removed and
   added runs and reuse `diff.rs`'s word diff, as `diff_text` does.
 - Partial staging of a new (intent-to-add) or deleted file: build the patch against an
