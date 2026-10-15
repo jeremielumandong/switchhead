@@ -56,6 +56,7 @@ mod remote_ops;
 mod search;
 mod section_menu;
 mod sidebar;
+mod signing_ops;
 mod stash_ops;
 mod submodule_ops;
 mod tag_ops;
@@ -1361,6 +1362,11 @@ impl Render for RepoView {
             }))
             .on_action(cx.listener(|this, _: &actions::LfsPrune, _, cx| this.lfs_prune(cx)))
             .on_action(cx.listener(|this, _: &actions::ApplyPatch, w, cx| this.pick_patches(w, cx)))
+            .on_action(
+                cx.listener(|this, _: &actions::SigningSettings, w, cx| {
+                    this.signing_settings(w, cx)
+                }),
+            )
             .on_action(
                 cx.listener(|this, _: &actions::LfsRefreshLocks, _, cx| this.load_lfs_locks(cx)),
             )

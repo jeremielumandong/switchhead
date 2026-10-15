@@ -113,7 +113,7 @@ impl RepoView {
 }
 
 /// The toolbar's Commands menu: the repository's custom commands, Create Pull Request,
-/// Apply Patch and the commands editor.
+/// Apply Patch, Commit Signing and the commands editor.
 pub(crate) fn build_commands_menu(
     menu: PopupMenu,
     view: &WeakEntity<RepoView>,
@@ -156,6 +156,11 @@ pub(crate) fn build_commands_menu(
                 .on_click(move |_, window, cx| {
                     let _ = view_p.update(cx, |v, cx| v.pick_patches(window, cx));
                 }),
+        )
+        .item(
+            PopupMenuItem::new("Commit Signing…").on_click(|_, window, cx| {
+                window.dispatch_action(Box::new(crate::actions::SigningSettings), cx)
+            }),
         )
         .item(
             PopupMenuItem::new("Edit Custom Commands…").on_click(|_, window, cx| {

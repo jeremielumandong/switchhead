@@ -177,6 +177,13 @@ impl ChangesView {
             .count()
     }
 
+    /// Re-read the commit box's identity (its name, email and signing changed).
+    pub fn reload_identity(&mut self, cx: &mut Context<Self>) {
+        if let Some((b, _)) = &self.commit {
+            b.update(cx, |b, cx| b.load_identity(cx));
+        }
+    }
+
     /// Re-read status (and the focused diff). Calls made while a read runs are folded
     /// into one more read when it ends.
     pub fn refresh(&mut self, cx: &mut Context<Self>) {

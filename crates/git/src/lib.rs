@@ -27,6 +27,7 @@ pub mod reflog;
 pub mod refs;
 pub mod repo;
 pub mod search;
+pub mod signing;
 pub mod stage;
 pub mod status;
 pub mod submodules;
