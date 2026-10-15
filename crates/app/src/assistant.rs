@@ -249,6 +249,63 @@ pub fn command_prompt(task: &str) -> String {
     )
 }
 
+/// The prompt asking what commit `rev` does.
+pub fn explain_commit_prompt(rev: &str, summary: &str) -> String {
+    format!(
+        "Explain commit {rev} (\"{summary}\") in this repository to someone reviewing \
+         the history.\n\n\
+         Read it with `show`; use `log` (rev `{rev}`, a few commits) for context and \
+         `blame` or `file_at` when a change only makes sense with the code around it. \
+         Then say, in short paragraphs or bullets: what it changes and why (from its \
+         message and diff), how it fits the commits around it, and anything risky, \
+         surprising or left unfinished. Mention files as `path:line`. Label every code \
+         block with its language. Do not suggest commands; you cannot run anything."
+    )
+}
+
+/// The prompt asking for a review of `branch` against `base`.
+pub fn review_prompt(branch: &str, base: &str) -> String {
+    format!(
+        "Review the branch `{branch}` against `{base}` in this repository, as a careful \
+         code reviewer.\n\n\
+         Its commits: `log` with rev `{base}..{branch}`. Its changes: `diff` with mode \
+         `range`, from `{base}`, to `{branch}` (what the branch changed since it \
+         diverged); start with `stat` on large branches and read the files that matter. \
+         Use `show`, `blame` and `file_at` where you need more context.\n\n\
+         Reply with a short summary of what the branch does, then the findings, most \
+         important first: bugs, risky or incomplete changes, missing tests, leftover debug \
+         code, and commits that should be squashed or split. Give each one the place \
+         (`path:line`) and why it matters. If nothing serious turns up, say so. Label \
+         every code block with its language. Do not suggest commands; you cannot run \
+         anything."
+    )
+}
+
+/// The branch to review `branch` against: the first of the usual trunk names that
+/// exists (local, then on a remote) and is not the branch itself, else its upstream.
+pub fn review_base(
+    branch: &str,
+    locals: &[String],
+    remotes: &[String],
+    upstream: Option<&str>,
+) -> Option<String> {
+    const TRUNKS: [&str; 4] = ["main", "master", "develop", "trunk"];
+    let own = |b: &str| b == branch || upstream == Some(b);
+    TRUNKS
+        .iter()
+        .find(|t| locals.iter().any(|l| l == *t) && !own(t))
+        .map(|t| (*t).to_owned())
+        .or_else(|| {
+            TRUNKS.iter().find_map(|t| {
+                remotes
+                    .iter()
+                    .find(|r| r.split_once('/').is_some_and(|(_, n)| n == *t) && !own(r))
+                    .cloned()
+            })
+        })
+        .or_else(|| upstream.map(str::to_owned))
+}
+
 /// Split an answer into the text before its last fenced code block and the block's
 /// content (with a final newline). `None` when it has no closed block.
 pub fn fenced_block(answer: &str) -> Option<(String, String)> {
@@ -278,6 +335,26 @@ mod tests {
         );
         assert_eq!(clean_message("```text\nAdd x\n```"), "Add x");
         assert_eq!(clean_message("  Add x \n"), "Add x");
+    }
+
+    #[test]
+    fn picks_a_review_base() {
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let (locals, remotes) = (v(&["main", "feature"]), v(&["origin/main", "origin/dev"]));
+        assert_eq!(
+            review_base("feature", &locals, &remotes, None).as_deref(),
+            Some("main")
+        );
+        // The trunk itself: its own upstream is skipped, so unpushed work is all left.
+        assert_eq!(
+            review_base("main", &locals, &remotes, Some("origin/main")).as_deref(),
+            Some("origin/main")
+        );
+        assert_eq!(
+            review_base("x", &v(&["x"]), &v(&["upstream/master"]), None).as_deref(),
+            Some("upstream/master")
+        );
+        assert_eq!(review_base("x", &v(&["x"]), &[], None), None);
     }
 
     #[test]

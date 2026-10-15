@@ -59,6 +59,8 @@ actions!(
         Undo,
         ToggleActivity,
         ToggleGitHelper,
+        ExplainCommit,
+        ReviewBranch,
     ]
 );
 
@@ -120,6 +122,8 @@ pub fn commands() -> Vec<Command> {
         c("Push All Tags", "Tags", PushAllTags, true),
         c("Show / Hide Activity", "Window", ToggleActivity, true),
         c("Git Helper…", "Assistant", ToggleGitHelper, true),
+        c("Explain Selected Commit", "Assistant", ExplainCommit, true),
+        c("Review Current Branch", "Assistant", ReviewBranch, true),
         c(
             "Toggle Inline / Side-by-Side Diff",
             "Diff",

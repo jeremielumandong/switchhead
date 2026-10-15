@@ -435,6 +435,72 @@ impl RepoView {
         cx.notify();
     }
 
+    /// Show `prompt`'s answer in the helper panel (opening it), titled `title`.
+    pub(super) fn assist(
+        &mut self,
+        title: String,
+        prompt: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.helper.is_none() {
+            self.toggle_helper(window, cx);
+        }
+        if let Some((helper, _)) = &self.helper {
+            helper.update(cx, |h, cx| h.ask_prompt(title, prompt, cx));
+        }
+    }
+
+    /// Ask the assistant what commit `id` does.
+    pub(super) fn explain_commit(
+        &mut self,
+        id: Oid,
+        summary: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let short = switchhead_git::short(&id);
+        let prompt = crate::assistant::explain_commit_prompt(&id.to_string(), &summary);
+        self.assist(format!("Explain {short} {summary}"), prompt, window, cx);
+    }
+
+    /// The branch `branch` is reviewed against, when there is one.
+    pub(super) fn review_base(&self, branch: &str) -> Option<String> {
+        let locals: Vec<String> = self.refs.branches.iter().map(|b| b.name.clone()).collect();
+        let remotes: Vec<String> = self
+            .refs
+            .remotes
+            .iter()
+            .filter(|r| !r.is_symbolic_head)
+            .map(|r| r.short())
+            .collect();
+        let upstream = self
+            .refs
+            .branches
+            .iter()
+            .find(|b| b.name == branch)
+            .and_then(|b| b.tracking.as_ref())
+            .map(|t| t.upstream.clone());
+        crate::assistant::review_base(branch, &locals, &remotes, upstream.as_deref())
+    }
+
+    /// Ask the assistant to review `branch` against `base`.
+    pub(super) fn review_branch(
+        &mut self,
+        branch: String,
+        base: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let prompt = crate::assistant::review_prompt(&branch, &base);
+        self.assist(
+            format!("Review {branch} against {base}"),
+            prompt,
+            window,
+            cx,
+        );
+    }
+
     /// Re-read refs and the log (keeps the selection when the commit is still there).
     pub fn reload(&mut self, cx: &mut Context<Self>) {
         self.cancel.cancel();
@@ -1124,6 +1190,20 @@ impl Render for RepoView {
                     this.toggle_helper(window, cx)
                 }),
             )
+            .on_action(cx.listener(|this, _: &actions::ExplainCommit, window, cx| {
+                if let Some(i) = this.selected {
+                    let (id, summary) = (this.log.id(i), this.log.summary(i).to_owned());
+                    this.explain_commit(id, summary, window, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &actions::ReviewBranch, window, cx| {
+                let Some(branch) = this.refs.head_branch.clone() else {
+                    return;
+                };
+                if let Some(base) = this.review_base(&branch) {
+                    this.review_branch(branch, base, window, cx);
+                }
+            }))
             .on_action(cx.listener(|this, _: &actions::NewBranch, window, cx| {
                 this.new_branch_at_selection(window, cx)
             }))

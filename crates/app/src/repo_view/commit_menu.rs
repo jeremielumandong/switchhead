@@ -297,6 +297,7 @@ pub(super) fn build_commit_menu(
         },
     );
     let rebase_summary = summary.clone();
+    let summary_e = summary.clone();
     menu = menu.item(
         PopupMenuItem::new(format!("Interactive Rebase {target} from Here…"))
             .disabled(busy || is_head || in_progress)
@@ -328,6 +329,10 @@ pub(super) fn build_commit_menu(
                 .on_click(act(Box::new(move |v, _, cx| v.copy_message(id, cx)))),
         )
         .separator()
+        .item(PopupMenuItem::new("Explain Commit").on_click(act(Box::new({
+            let summary = summary_e.clone();
+            move |v, w, cx| v.explain_commit(id, summary.clone(), w, cx)
+        }))))
         .item(
             PopupMenuItem::new("Browse Files at This Commit")
                 .on_click(act(Box::new(move |v, w, cx| v.open_tree(id, w, cx)))),

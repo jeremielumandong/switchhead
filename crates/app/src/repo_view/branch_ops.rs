@@ -409,6 +409,20 @@ pub(super) fn build_ref_menu(
             menu = menu.item(PopupMenuItem::new("Rename…").on_click(act(Box::new(
                 move |v, window, cx| v.rename_branch_dialog(b1.clone(), window, cx),
             ))));
+            let base = v.read(cx).review_base(b);
+            let b5 = b.clone();
+            menu = menu.item(
+                PopupMenuItem::new(match &base {
+                    Some(base) => format!("Review Against {base}"),
+                    None => "Review Branch (no base branch)".to_owned(),
+                })
+                .disabled(base.is_none())
+                .on_click(act(Box::new(move |v, window, cx| {
+                    if let Some(base) = base.clone() {
+                        v.review_branch(b5.clone(), base, window, cx)
+                    }
+                }))),
+            );
             let b4 = b.clone();
             menu = menu.item(PopupMenuItem::new("Show Reflog").on_click(act(Box::new(
                 move |v, window, cx| v.open_reflog(b4.clone(), window, cx),
