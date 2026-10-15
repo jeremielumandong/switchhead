@@ -254,8 +254,9 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
       checked in `main` before GPUI starts): `status`, `log`, `show`, `diff` (staged /
       unstaged / range), `branches`, `blame`, `file_at`, `conflicts`. Scoped to one repo.
   `crates/mcp`: Switchyard's stdio JSON-RPC server made blocking, and `GitTools`, each tool one read-only `git` call (no optional locks, `--no-ext-diff`) in the repository given as `switchhead mcp --repo <path>` (checked in `main` before logging and GPUI; logs go to stderr). Revisions that look like options and paths outside the work tree are refused; output is capped at 60 KB with a note. Tested on throwaway repos, including a conflicted merge; checked by piping JSON-RPC into the built binary.
-- [ ] M5-3 Generate commit message from the staged diff (button in the commit box; follows
+- [x] M5-3 Generate commit message from the staged diff (button in the commit box; follows
       the repo's recent message style; conventional commits option).
+  "Generate" in the commit box runs the configured coding CLI (`assistant.rs`: settings in the app state, the first installed of Claude Code / Codex / Gemini by default) with `switchhead mcp --repo` as its only tools; it reads the staged diff and recent log, and the answer fills subject and body. Stop cancels; the chevron toggles Conventional Commits. Checked with Claude Code 2.1.300: it called `diff` and `log` and wrote both styles. Settings UI comes with M5-7.
 - [ ] M5-4 Resolve conflicts with AI: per file, proposes merged content; shown as a diff
       against the conflicted file; user accepts / edits / rejects.
 - [ ] M5-5 Git command helper: "what do you want to do?" → explanation plus commands in a

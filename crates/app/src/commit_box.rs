@@ -55,6 +55,8 @@ pub struct CommitBox {
     error: Option<SharedString>,
     /// Who commits (`None` until read).
     identity: Option<Current>,
+    /// A coding CLI is writing the message (cancels it).
+    generating: Option<switchhead_agents::CancelHandle>,
     _subs: Vec<Subscription>,
 }
 
@@ -114,6 +116,7 @@ impl CommitBox {
             busy: false,
             error: None,
             identity: None,
+            generating: None,
             _subs: subs,
         };
         this.load_template(window, cx);
@@ -271,6 +274,95 @@ impl CommitBox {
         cx.notify();
     }
 
+    /// Ask the coding CLI for a message for the staged changes and put it in the fields;
+    /// while it runs, the same call stops it.
+    fn generate(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(c) = self.generating.take() {
+            c.cancel();
+            cx.notify();
+            return;
+        }
+        if self.busy || (self.staged == 0 && !self.amend) {
+            self.error = Some("Stage the changes to describe first.".into());
+            cx.notify();
+            return;
+        }
+        let settings = cx.global::<crate::assistant::AssistantSettings>().clone();
+        let prompt =
+            crate::assistant::commit_message_prompt(settings.conventional_commits, self.amend);
+        let (cancel, rx) = match crate::assistant::spawn(&settings, self.repo.root(), prompt) {
+            Ok(r) => r,
+            Err(e) => {
+                self.error = Some(e.into());
+                cx.notify();
+                return;
+            }
+        };
+        self.generating = Some(cancel);
+        self.error = None;
+        cx.spawn_in(window, async move |this, cx| {
+            let res = rx
+                .await
+                .unwrap_or_else(|_| Err("The assistant stopped.".into()));
+            let _ = this.update_in(cx, |this, window, cx| {
+                // `None`: stopped from the button; keep what the user has.
+                if this.generating.take().is_some() {
+                    match res {
+                        Ok(m) => {
+                            let m = crate::assistant::clean_message(&m);
+                            this.set_message(&m, window, cx);
+                        }
+                        Err(e) => this.error = Some(e.trim().to_owned().into()),
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn render_generate(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let running = self.generating.is_some();
+        let can = running || (!self.busy && (self.staged > 0 || self.amend));
+        let conventional = cx
+            .global::<crate::assistant::AssistantSettings>()
+            .conventional_commits;
+        div()
+            .flex()
+            .items_center()
+            .child(
+                Button::new("generate-message")
+                    .ghost()
+                    .xsmall()
+                    .label(if running { "Stop" } else { "Generate" })
+                    .tooltip(if running {
+                        "Stop writing the message"
+                    } else {
+                        "Write a message for the staged changes with your coding CLI"
+                    })
+                    .disabled(!can)
+                    .on_click(cx.listener(|this, _, window, cx| this.generate(window, cx))),
+            )
+            .child(
+                Button::new("generate-options")
+                    .ghost()
+                    .xsmall()
+                    .icon(gpui_kit::component::IconName::ChevronDown)
+                    .dropdown_menu(move |menu, _, _| {
+                        menu.item(
+                            PopupMenuItem::new("Conventional Commits")
+                                .checked(conventional)
+                                .on_click(|_, _, cx| {
+                                    cx.update_global::<crate::assistant::AssistantSettings, _>(
+                                        |s, _| s.conventional_commits = !s.conventional_commits,
+                                    )
+                                }),
+                        )
+                    }),
+            )
+    }
+
     fn render_recent(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let has = !cx.global::<RecentMessages>().0.is_empty();
         let this = cx.entity().downgrade();
@@ -335,6 +427,7 @@ impl Render for CommitBox {
                             .text_color(p.fg)
                             .child(if self.amend { "Amend" } else { "Commit" }),
                     )
+                    .child(self.render_generate(cx))
                     .child(self.render_recent(cx))
                     .child(
                         div()
@@ -392,6 +485,9 @@ impl Render for CommitBox {
                 )
             })
             .when(self.busy, |d| d.child(ui::loading_bar("committing", &p)))
+            .when(self.generating.is_some(), |d| {
+                d.child(ui::loading_bar("generating", &p))
+            })
             .child(
                 ui::button_with_key(
                     "commit",

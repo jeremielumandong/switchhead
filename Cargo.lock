@@ -7179,6 +7179,7 @@ dependencies = [
  "gpui-kit",
  "serde",
  "serde_json",
+ "switchhead-agents",
  "switchhead-git",
  "switchhead-mcp",
  "tempfile",
