@@ -257,8 +257,9 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [x] M5-3 Generate commit message from the staged diff (button in the commit box; follows
       the repo's recent message style; conventional commits option).
   "Generate" in the commit box runs the configured coding CLI (`assistant.rs`: settings in the app state, the first installed of Claude Code / Codex / Gemini by default) with `switchhead mcp --repo` as its only tools; it reads the staged diff and recent log, and the answer fills subject and body. Stop cancels; the chevron toggles Conventional Commits. Checked with Claude Code 2.1.300: it called `diff` and `log` and wrote both styles. Settings UI comes with M5-7.
-- [ ] M5-4 Resolve conflicts with AI: per file, proposes merged content; shown as a diff
+- [x] M5-4 Resolve conflicts with AI: per file, proposes merged content; shown as a diff
       against the conflicted file; user accepts / edits / rejects.
+  "Resolve with AI" in the merge helper asks the coding CLI (through `conflicts`, `status`, `log`, `show`) for the whole resolved file in one fenced block; the answer's note and a diff against the current result show in place of the cards. Use Proposal puts it in the editor (edit, then Mark Resolved); Discard drops it; answers with markers left or no block are refused. Checked with Claude Code 2.1.300 on a two-sided field conflict: it kept both fields and explained the port choice.
 - [ ] M5-5 Git command helper: "what do you want to do?" → explanation plus commands in a
       ```bash block; each command runs only when the user clicks Run (shown with its output).
 - [ ] M5-6 Branch review (summary and findings for a branch vs its base) and explain-commit.

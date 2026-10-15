@@ -5,6 +5,10 @@
 //! The result editor is the source of truth. Its text is re-parsed after every change,
 //! so the cards always show the conflicts still marked in it, and picking a side
 //! rewrites only that conflict, keeping edits made elsewhere by hand.
+//!
+//! Resolve with AI asks the coding CLI for the whole resolved file and shows it as a diff
+//! against the result; Use Proposal puts it in the editor, where it can still be edited
+//! before Mark Resolved. Nothing is written until then.
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -16,14 +20,18 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, AppContext as _, Context, Entity, EventEmitter, FontWeight, Hsla,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, px,
+    StatefulInteractiveElement as _, Styled as _, Subscription, UniformListScrollHandle, Window,
+    div, px,
 };
+use switchhead_agents::CancelHandle;
 use switchhead_git::Repo;
 use switchhead_git::conflict::{self, Choice, ConflictFile};
 use switchhead_git::status::Conflict as Kind;
 
 use crate::appearance::{rpx, ts};
 use crate::changes_view::{first_line, small_button};
+use crate::diff_view::{self, Content, highlight_theme, theme_key};
+use crate::store::DiffPrefs;
 use crate::theme::{MONO, Palette, palette};
 use crate::ui;
 
@@ -43,6 +51,15 @@ enum Loaded {
     WholeFile(String),
 }
 
+/// A resolved file proposed by the assistant, not yet in the editor.
+struct Proposal {
+    text: String,
+    /// What the assistant said about it.
+    note: String,
+    /// The proposal as a diff against the result it was asked for.
+    diff: Rc<diff_view::Loaded>,
+}
+
 /// The merge helper for one conflicted path.
 pub struct MergeView {
     repo: Repo,
@@ -56,7 +73,19 @@ pub struct MergeView {
     tool: Option<String>,
     busy: bool,
     error: Option<SharedString>,
+    /// A Resolve with AI run in progress.
+    resolving: Option<CancelHandle>,
+    proposal: Option<Proposal>,
+    proposal_scroll: UniformListScrollHandle,
     _sub: Subscription,
+}
+
+impl Drop for MergeView {
+    fn drop(&mut self) {
+        if let Some(c) = self.resolving.take() {
+            c.cancel();
+        }
+    }
 }
 
 impl EventEmitter<MergeEvent> for MergeView {}
@@ -92,6 +121,9 @@ impl MergeView {
             tool: None,
             busy: false,
             error: None,
+            resolving: None,
+            proposal: None,
+            proposal_scroll: UniformListScrollHandle::new(),
             _sub: sub,
         };
         this.load(window, cx);
@@ -166,6 +198,102 @@ impl MergeView {
         self.result
             .update(cx, |e, cx| e.set_value(text, window, cx));
         self.reparse(cx);
+    }
+
+    /// Ask the coding CLI for the resolved file; a second click stops it.
+    fn resolve_with_ai(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(c) = self.resolving.take() {
+            c.cancel();
+            cx.notify();
+            return;
+        }
+        if self.busy {
+            return;
+        }
+        let settings = cx.global::<crate::assistant::AssistantSettings>().clone();
+        let prompt = crate::assistant::conflict_prompt(&self.path.to_string_lossy());
+        let (cancel, rx) = match crate::assistant::spawn(&settings, self.repo.root(), prompt) {
+            Ok(r) => r,
+            Err(e) => {
+                self.error = Some(e.into());
+                cx.notify();
+                return;
+            }
+        };
+        self.resolving = Some(cancel);
+        self.proposal = None;
+        self.error = None;
+        let path = self.path.clone();
+        cx.spawn_in(window, async move |this, cx| {
+            let res = rx
+                .await
+                .unwrap_or_else(|_| Err("The assistant stopped.".into()));
+            let Ok(current) = this.update(cx, |v, cx| v.text(cx)) else {
+                return;
+            };
+            let (prefs, theme) =
+                match this.update(cx, |_, cx| (*cx.global::<DiffPrefs>(), highlight_theme(cx))) {
+                    Ok(t) => t,
+                    Err(_) => return,
+                };
+            let proposal = res.and_then(|answer| check_proposal(&answer));
+            let proposal = match proposal {
+                Ok((note, text)) => {
+                    let key = theme_key(&theme);
+                    let (old, new) = (current, text.clone());
+                    let content = cx
+                        .background_executor()
+                        .spawn(async move {
+                            Content::from_bytes(
+                                &path,
+                                Some(old.as_bytes()),
+                                Some(new.as_bytes()),
+                                &prefs,
+                                &theme,
+                            )
+                        })
+                        .await;
+                    Ok(Proposal {
+                        text,
+                        note,
+                        diff: Rc::new(diff_view::Loaded {
+                            file: 0,
+                            prefs,
+                            theme: key,
+                            content,
+                        }),
+                    })
+                }
+                Err(e) => Err(e),
+            };
+            let _ = this.update(cx, |v, cx| {
+                // `None`: stopped from the button.
+                if v.resolving.take().is_some() {
+                    match proposal {
+                        Ok(p) => v.proposal = Some(p),
+                        Err(e) => v.error = Some(first_line(e.trim()).into()),
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Put the proposal in the editor, to edit or mark resolved.
+    fn use_proposal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(p) = self.proposal.take() else {
+            return;
+        };
+        self.result
+            .update(cx, |e, cx| e.set_value(p.text, window, cx));
+        self.reparse(cx);
+    }
+
+    fn discard_proposal(&mut self, cx: &mut Context<Self>) {
+        self.proposal = None;
+        cx.notify();
     }
 
     /// Run `f` in the background; on success the file counts as resolved.
@@ -302,6 +430,7 @@ impl MergeView {
         };
         let left = self.left().unwrap_or(0);
         let enabled = !self.busy;
+        let resolving = self.resolving.is_some();
         div()
             .flex_none()
             .h(rpx(34.))
@@ -331,16 +460,38 @@ impl MergeView {
                     .text_color(if left == 0 && text { p.added } else { p.fg3 })
                     .child(status),
             )
-            .when(text && left > 0, |d| {
-                d.child(small_button("all-ours", "All Ours", enabled, p).on_click(
-                    cx.listener(|this, _, window, cx| this.choose_all(Choice::Ours, window, cx)),
-                ))
-                .child(
-                    small_button("all-theirs", "All Theirs", enabled, p).on_click(cx.listener(
-                        |this, _, window, cx| this.choose_all(Choice::Theirs, window, cx),
-                    )),
-                )
-            })
+            .when(
+                text && left > 0 && !resolving && self.proposal.is_none(),
+                |d| {
+                    d.child(small_button("all-ours", "All Ours", enabled, p).on_click(
+                        cx.listener(|this, _, window, cx| {
+                            this.choose_all(Choice::Ours, window, cx)
+                        }),
+                    ))
+                    .child(
+                        small_button("all-theirs", "All Theirs", enabled, p).on_click(cx.listener(
+                            |this, _, window, cx| this.choose_all(Choice::Theirs, window, cx),
+                        )),
+                    )
+                },
+            )
+            .when(
+                text && self.proposal.is_none() && (left > 0 || self.resolving.is_some()),
+                |d| {
+                    let running = self.resolving.is_some();
+                    d.child(
+                        small_button(
+                            "resolve-ai",
+                            if running { "Stop" } else { "Resolve with AI" },
+                            enabled,
+                            p,
+                        )
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.resolve_with_ai(window, cx)),
+                        ),
+                    )
+                },
+            )
             .when_some(self.tool.clone(), |d, tool| {
                 d.child(
                     small_button("merge-tool", format!("Open in {tool}"), enabled, p)
@@ -473,6 +624,84 @@ impl MergeView {
             .into_any_element()
     }
 
+    fn render_proposal(&self, prop: &Proposal, p: &Palette, cx: &mut Context<Self>) -> AnyElement {
+        let row_h = diff_view::row_height(cx);
+        let unchanged =
+            matches!(&prop.diff.content, Content::Text { diff, .. } if diff.hunks().is_empty());
+        div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .flex_none()
+                    .px(rpx(12.))
+                    .py(rpx(8.))
+                    .flex()
+                    .items_start()
+                    .gap(rpx(8.))
+                    .bg(p.panel)
+                    .border_b_1()
+                    .border_color(p.bd)
+                    .child(
+                        div()
+                            .id("proposal-note")
+                            .flex_1()
+                            .min_w_0()
+                            .max_h(rpx(120.))
+                            .overflow_y_scroll()
+                            .flex()
+                            .flex_col()
+                            .gap(rpx(2.))
+                            .child(
+                                div()
+                                    .text_size(ts::SMALL)
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(p.fg)
+                                    .child("Proposed resolution"),
+                            )
+                            .child(div().text_size(ts::SMALL).text_color(p.fg2).child(
+                                if prop.note.is_empty() {
+                                    "The assistant gave no explanation.".to_owned()
+                                } else {
+                                    prop.note.clone()
+                                },
+                            )),
+                    )
+                    .child(
+                        ui::button("use-proposal", "Use Proposal", ui::Kind::Primary, p)
+                            .h(rpx(22.))
+                            .cursor_pointer()
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.use_proposal(window, cx)),
+                            ),
+                    )
+                    .child(
+                        small_button("discard-proposal", "Discard", true, p)
+                            .on_click(cx.listener(|this, _, _, cx| this.discard_proposal(cx))),
+                    ),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .px(rpx(12.))
+                    .py(rpx(4.))
+                    .text_size(ts::SMALL)
+                    .text_color(p.fg3)
+                    .child(
+                        "Changes from the conflicted result. Use Proposal puts it in the editor; \
+                         nothing is saved until Mark Resolved.",
+                    ),
+            )
+            .child(if unchanged {
+                diff_view::message("The proposal is the same as the result.", p.fg3)
+            } else {
+                diff_view::body(&prop.diff, &self.proposal_scroll, row_h, p, None, cx)
+            })
+            .into_any_element()
+    }
+
     fn render_whole_file(&self, note: &str, p: &Palette, cx: &mut Context<Self>) -> AnyElement {
         let enabled = !self.busy;
         let (keep, delete) = (is_delete(self.kind), is_delete(self.kind));
@@ -519,6 +748,20 @@ impl MergeView {
             )
             .into_any_element()
     }
+}
+
+/// The note and resolved file in an assistant's answer; an error when it has no file or
+/// conflict markers are left in it.
+fn check_proposal(answer: &str) -> Result<(String, String), String> {
+    let (note, text) = crate::assistant::fenced_block(answer)
+        .ok_or("The assistant's answer has no resolved file.")?;
+    let marked = text
+        .lines()
+        .any(|l| l.starts_with("<<<<<<<") || l.starts_with(">>>>>>>"));
+    if marked {
+        return Err("The assistant's proposal still has conflict markers.".into());
+    }
+    Ok((note, text))
 }
 
 /// Lines shown per side in a conflict card.
@@ -587,6 +830,10 @@ impl Render for MergeView {
                 let note = format!("{}. {note}", kind_label(self.kind));
                 self.render_whole_file(&note, &p, cx)
             }
+            Loaded::Text if self.proposal.is_some() => match &self.proposal {
+                Some(prop) => self.render_proposal(prop, &p, cx),
+                None => div().into_any_element(),
+            },
             Loaded::Text => {
                 let cards: Vec<AnyElement> = self
                     .remaining
@@ -660,7 +907,26 @@ impl Render for MergeView {
                         .child(e),
                 )
             })
-            .when(self.busy, |d| d.child(ui::loading_bar("merge-busy", &p)))
+            .when(self.busy || self.resolving.is_some(), |d| {
+                d.child(ui::loading_bar("merge-busy", &p))
+            })
             .child(body)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn proposals_must_be_resolved() {
+        let ok = "Kept both.\n```\na\nb\n```";
+        assert_eq!(
+            check_proposal(ok),
+            Ok(("Kept both.".into(), "a\nb\n".into()))
+        );
+        let marked = "```\n<<<<<<< HEAD\na\n=======\nb\n>>>>>>> x\n```";
+        assert!(check_proposal(marked).is_err());
+        assert!(check_proposal("I could not resolve it.").is_err());
     }
 }
