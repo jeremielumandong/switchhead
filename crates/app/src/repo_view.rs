@@ -329,7 +329,6 @@ impl RepoView {
             _op: None,
         };
         v.reload(cx);
-        crate::probe::start(cx);
         v
     }
 
@@ -893,21 +892,6 @@ impl RepoView {
         }
         self.run_op(label, done, f, cx);
         self.op_then = Some(Box::new(then));
-    }
-
-    /// TEMPORARY probe hook: nothing running or loading.
-    pub(crate) fn probe_idle(&self) -> bool {
-        !self.busy() && !self.loading
-    }
-
-    /// TEMPORARY probe hook: delete branch `name` like the Delete dialog does.
-    pub(crate) fn probe_delete(&mut self, name: String, cx: &mut Context<Self>) {
-        self.run_op(
-            "Deleting branch",
-            "Branch deleted",
-            move |r, _, _| r.delete_branch(&name, false),
-            cx,
-        );
     }
 
     /// Stop the running operation (git is killed; the repository is left as git leaves it).
