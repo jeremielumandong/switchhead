@@ -1,7 +1,8 @@
 //! The commands in an assistant's answer: the answer split into prose and code blocks,
 //! and each line of a shell block split into words the way a shell would, so a plain
 //! `git ...` line can run without a shell. Lines with shell syntax (pipes, redirects,
-//! variables, placeholders like `<branch>`) are shown but not runnable.
+//! variables, placeholders like `<branch>`) are shown but not runnable. Prose keeps its
+//! lists and headings, with inline Markdown (code, bold, italic, links) as styles.
 
 /// A piece of an answer.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -137,39 +138,179 @@ pub fn parts(answer: &str) -> Vec<Part> {
     parts
 }
 
-/// Prose as display blocks: paragraphs with their lines joined, and each list item on
-/// its own, without Markdown's bold markers.
-pub fn prose_blocks(text: &str) -> Vec<String> {
-    let mut blocks: Vec<String> = Vec::new();
-    let mut open = false;
-    for line in text.lines() {
-        let line = line.trim().replace("**", "");
-        // A Markdown heading reads as its own line.
-        let heading = line.starts_with('#');
-        let line = line.trim_start_matches('#').trim_start().to_owned();
-        let item = heading
-            || line.starts_with("- ")
-            || line.starts_with("* ")
-            || line.split_once(". ").is_some_and(|(n, _)| {
-                !n.is_empty() && n.len() <= 2 && n.chars().all(|c| c.is_ascii_digit())
-            });
-        match blocks.last_mut() {
-            _ if line.is_empty() => open = false,
-            Some(last) if open && !item => {
-                last.push(' ');
-                last.push_str(&line);
+/// How a span of prose is styled.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Marks {
+    /// `**strong**`.
+    pub bold: bool,
+    /// `*emphasis*`.
+    pub italic: bool,
+    /// `` `code` ``.
+    pub code: bool,
+    /// A link's URL (http and https only; other links show as text).
+    pub link: Option<String>,
+}
+
+/// Text without its Markdown markers, with styled byte ranges (sorted, not overlapping).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Inline {
+    /// The text as shown.
+    pub text: String,
+    /// Styled ranges of `text`.
+    pub spans: Vec<(std::ops::Range<usize>, Marks)>,
+}
+
+impl Inline {
+    fn push(&mut self, s: &str, marks: &Marks) {
+        if s.is_empty() {
+            return;
+        }
+        let start = self.text.len();
+        self.text.push_str(s);
+        if *marks == Marks::default() {
+            return;
+        }
+        match self.spans.last_mut() {
+            Some((r, m)) if r.end == start && m == marks => r.end = self.text.len(),
+            _ => self.spans.push((start..self.text.len(), marks.clone())),
+        }
+    }
+
+    /// Parse one paragraph's inline Markdown: `code`, **bold**, *italic*, [links](url).
+    /// Underscores stay as they are (they are common in names).
+    pub fn parse(src: &str) -> Self {
+        let mut out = Inline::default();
+        let mut marks = Marks::default();
+        let mut rest = src;
+        while let Some(c) = rest.chars().next() {
+            let after = &rest[c.len_utf8()..];
+            match c {
+                '`' => {
+                    if let Some(end) = after.find('`') {
+                        let code = Marks {
+                            code: true,
+                            ..marks.clone()
+                        };
+                        out.push(&after[..end], &code);
+                        rest = &after[end + 1..];
+                        continue;
+                    }
+                }
+                '*' if after.starts_with('*') => {
+                    marks.bold = !marks.bold;
+                    rest = &after[1..];
+                    continue;
+                }
+                '*' if marks.italic || after.starts_with(|c: char| !c.is_whitespace()) => {
+                    marks.italic = !marks.italic;
+                    rest = after;
+                    continue;
+                }
+                '[' => {
+                    let link = after.find("](").and_then(|close| {
+                        let url_end = after[close + 2..].find(')')?;
+                        let url = &after[close + 2..close + 2 + url_end];
+                        (url.starts_with("https://") || url.starts_with("http://"))
+                            .then(|| (&after[..close], url, close + 2 + url_end + 1))
+                    });
+                    if let Some((label, url, len)) = link {
+                        let m = Marks {
+                            link: Some(url.to_owned()),
+                            ..marks.clone()
+                        };
+                        out.push(label, &m);
+                        rest = &after[len..];
+                        continue;
+                    }
+                }
+                _ => {}
             }
-            _ => {
-                let line = match line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")) {
-                    Some(rest) => format!("• {rest}"),
-                    None => line,
-                };
-                blocks.push(line);
-                open = !heading;
+            out.push(&rest[..c.len_utf8()], &marks);
+            rest = after;
+        }
+        out
+    }
+}
+
+/// A block of prose.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Prose {
+    /// A paragraph, its lines joined.
+    Paragraph(Inline),
+    /// A heading.
+    Heading(Inline),
+    /// A list item: its marker (`•`, `1.`) and nesting depth.
+    Item {
+        /// `•` or the number.
+        marker: String,
+        /// 0 for a top-level item.
+        depth: usize,
+        /// The item's text.
+        text: Inline,
+    },
+}
+
+/// Prose as display blocks: paragraphs with their lines joined, headings, and each list
+/// item on its own, with inline Markdown turned into styles.
+pub fn prose_blocks(text: &str) -> Vec<Prose> {
+    enum Raw {
+        Paragraph(String),
+        Heading(String),
+        Item(String, usize, String),
+    }
+    let mut blocks: Vec<Raw> = Vec::new();
+    let mut open = false;
+    for raw in text.lines() {
+        let indent = raw.len() - raw.trim_start().len();
+        let line = raw.trim();
+        if line.is_empty() {
+            open = false;
+            continue;
+        }
+        if let Some(h) = line.strip_prefix('#') {
+            blocks.push(Raw::Heading(h.trim_start_matches('#').trim().to_owned()));
+            open = false;
+            continue;
+        }
+        let item = match line.split_once(' ') {
+            Some(("-" | "*" | "+", rest)) => Some(("•".to_owned(), rest)),
+            Some((n, rest))
+                if n.len() >= 2
+                    && n.len() <= 4
+                    && (n.ends_with('.') || n.ends_with(')'))
+                    && n[..n.len() - 1].chars().all(|c| c.is_ascii_digit()) =>
+            {
+                Some((n.to_owned(), rest))
+            }
+            _ => None,
+        };
+        match (item, blocks.last_mut()) {
+            (Some((marker, rest)), _) => {
+                blocks.push(Raw::Item(marker, indent / 2, rest.trim().to_owned()));
+                open = true;
+            }
+            (None, Some(Raw::Paragraph(t) | Raw::Item(_, _, t))) if open => {
+                t.push(' ');
+                t.push_str(line);
+            }
+            (None, _) => {
+                blocks.push(Raw::Paragraph(line.to_owned()));
+                open = true;
             }
         }
     }
     blocks
+        .into_iter()
+        .map(|b| match b {
+            Raw::Paragraph(t) => Prose::Paragraph(Inline::parse(&t)),
+            Raw::Heading(t) => Prose::Heading(Inline::parse(&t)),
+            Raw::Item(marker, depth, t) => Prose::Item {
+                marker,
+                depth,
+                text: Inline::parse(&t),
+            },
+        })
+        .collect()
 }
 
 /// Split a line into words like a POSIX shell: quotes, backslashes and a trailing
@@ -309,17 +450,54 @@ mod tests {
 
     #[test]
     fn keeps_list_items_apart() {
-        let t = "## Summary\nTwo steps:\nfirst this.\n\n- **Safe:** keeps\n  your files\n- Local only\n1. One";
+        let t = "## Summary\nTwo steps:\nfirst this.\n\n- **Safe:** keeps\n  your files\n  - Local only\n1. One";
+        let plain: Vec<(String, String)> = prose_blocks(t)
+            .into_iter()
+            .map(|b| match b {
+                Prose::Paragraph(t) => ("p".into(), t.text),
+                Prose::Heading(t) => ("h".into(), t.text),
+                Prose::Item {
+                    marker,
+                    depth,
+                    text,
+                } => (format!("{marker}{depth}"), text.text),
+            })
+            .collect();
+        let want = [
+            ("h", "Summary"),
+            ("p", "Two steps: first this."),
+            ("•0", "Safe: keeps your files"),
+            ("•1", "Local only"),
+            ("1.0", "One"),
+        ];
         assert_eq!(
-            prose_blocks(t),
-            [
-                "Summary",
-                "Two steps: first this.",
-                "• Safe: keeps your files",
-                "• Local only",
-                "1. One"
-            ]
+            plain,
+            want.map(|(a, b)| (a.to_owned(), b.to_owned())).to_vec()
         );
+    }
+
+    #[test]
+    fn styles_inline_markdown() {
+        let i = Inline::parse(
+            "Run `git reset --soft`, **not** *hard*: see [docs](https://git-scm.com) or my_branch_name.",
+        );
+        assert_eq!(
+            i.text,
+            "Run git reset --soft, not hard: see docs or my_branch_name."
+        );
+        let marked: Vec<(&str, &Marks)> = i
+            .spans
+            .iter()
+            .map(|(r, m)| (&i.text[r.clone()], m))
+            .collect();
+        assert_eq!(marked.len(), 4);
+        assert_eq!(marked[0].0, "git reset --soft");
+        assert!(marked[0].1.code);
+        assert!(marked[1].1.bold && marked[1].0 == "not");
+        assert!(marked[2].1.italic && marked[2].0 == "hard");
+        assert_eq!(marked[3].1.link.as_deref(), Some("https://git-scm.com"));
+        // A lone star is text.
+        assert_eq!(Inline::parse("a * b").text, "a * b");
     }
 
     #[test]

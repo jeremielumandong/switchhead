@@ -53,6 +53,16 @@ impl AssistantSettings {
         }
     }
 
+    /// One CLI's settings, to change.
+    pub fn cli_mut(&mut self, kind: AgentKind) -> &mut CliSettings {
+        match kind {
+            AgentKind::ClaudeCode => &mut self.claude_code,
+            AgentKind::Codex => &mut self.codex,
+            AgentKind::Gemini => &mut self.gemini,
+            AgentKind::Custom => &mut self.custom_settings,
+        }
+    }
+
     /// The CLI runs use: the chosen one, else the first built-in one found.
     pub fn agent(&self) -> Option<AgentKind> {
         self.agent.or_else(|| {
@@ -94,6 +104,17 @@ pub fn start(
     repo: &Path,
     prompt: String,
 ) -> Result<AgentRun, String> {
+    start_with(settings, repo, prompt, None).map(|(run, _)| run)
+}
+
+/// [`start`], continuing the conversation `resume` (a session id the same CLI reported).
+/// Also returns which CLI runs.
+pub fn start_with(
+    settings: &AssistantSettings,
+    repo: &Path,
+    prompt: String,
+    resume: Option<String>,
+) -> Result<(AgentRun, AgentKind), String> {
     let kind = settings.agent().ok_or_else(|| {
         "No coding CLI found. Install Claude Code, Codex CLI or Gemini CLI, or set one up in \
          Settings → Assistant."
@@ -107,7 +128,7 @@ pub fn start(
     let req = RunRequest {
         program: settings.program(kind),
         prompt,
-        resume: None,
+        resume,
         model: some(&cli.model),
         mcp: McpServer {
             command: exe,
@@ -123,10 +144,43 @@ pub fn start(
         extra_env: Vec::new(),
         guards: Vec::new(),
     };
-    switchhead_agents::runner::start(adapter, req).map_err(|e| match e {
+    let run = switchhead_agents::runner::start(adapter, req).map_err(|e| match e {
         AgentError::NotFound(n) => format!("{n} is not installed or not on PATH"),
         e => e.to_string(),
-    })
+    })?;
+    Ok((run, kind))
+}
+
+/// A run whose events stream to the returned receiver as they arrive (the assistant
+/// panel). The last event is always [`AgentEvent::Exited`].
+pub fn stream(
+    settings: &AssistantSettings,
+    repo: &Path,
+    prompt: String,
+    resume: Option<String>,
+) -> Result<
+    (
+        CancelHandle,
+        AgentKind,
+        tokio::sync::mpsc::UnboundedReceiver<AgentEvent>,
+    ),
+    String,
+> {
+    let (mut run, kind) = start_with(settings, repo, prompt, resume)?;
+    let cancel = run.cancel_handle();
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    std::thread::Builder::new()
+        .name("assistant-stream".into())
+        .spawn(move || {
+            while let Some(ev) = run.blocking_next() {
+                let end = matches!(ev, AgentEvent::Exited(_));
+                if tx.send(ev).is_err() || end {
+                    break;
+                }
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    Ok((cancel, kind, rx))
 }
 
 /// Run to the end on this (non-async) thread and return the answer text.
@@ -247,6 +301,27 @@ pub fn command_prompt(task: &str) -> String {
          cannot be done with git, say so and give no block. You cannot run anything: \
          the user reviews each command and runs it from the app."
     )
+}
+
+/// A follow-up in the assistant panel's conversation (the CLI resumes its session, so
+/// the earlier rules still hold). `ran` lists the commands the user ran from the last
+/// answer, with whether each succeeded.
+pub fn follow_up_prompt(question: &str, ran: &[(String, bool)]) -> String {
+    let mut out = String::new();
+    if !ran.is_empty() {
+        out.push_str("Since your last answer I ran:\n");
+        for (line, ok) in ran {
+            let how = if *ok { "succeeded" } else { "failed" };
+            out.push_str(&format!("- `{line}` ({how})\n"));
+        }
+        out.push('\n');
+    }
+    out.push_str(question);
+    out.push_str(
+        "\n\nThe repository may have changed: look again before suggesting commands, and \
+         follow the same rules for command blocks as before.",
+    );
+    out
 }
 
 /// The prompt asking what commit `rev` does.
@@ -372,6 +447,15 @@ mod tests {
         );
         assert_eq!(fenced_block("no block"), None);
         assert_eq!(fenced_block("```\nunclosed"), None);
+    }
+
+    #[test]
+    fn follow_ups_list_what_ran() {
+        let p = follow_up_prompt("And now?", &[("git reset --soft HEAD~1".into(), true)]);
+        assert!(p.starts_with(
+            "Since your last answer I ran:\n- `git reset --soft HEAD~1` (succeeded)\n\nAnd now?"
+        ));
+        assert!(follow_up_prompt("Why?", &[]).starts_with("Why?"));
     }
 
     #[test]

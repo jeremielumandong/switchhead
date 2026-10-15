@@ -45,6 +45,11 @@ pub struct Workspace {
     pub(crate) manager: ManagerState,
     focus: FocusHandle,
     settings_open: bool,
+    /// Settings → Assistant, while open.
+    assistant_settings: Option<(
+        Entity<crate::assistant_settings::AssistantSettingsView>,
+        gpui_kit::Subscription,
+    )>,
     /// Move keyboard focus to the active tab on the next frame (it just changed).
     focus_tab: bool,
     /// A message for the status bar (an open that failed).
@@ -144,6 +149,7 @@ impl Workspace {
             active: 0,
             focus: cx.focus_handle(),
             settings_open: false,
+            assistant_settings: None,
             focus_tab: false,
             notice: None,
             _save: None,
@@ -524,7 +530,7 @@ impl Workspace {
                 "tool-assistant",
                 "icons/bot.svg",
                 "Assistant",
-                "Git Helper: ask the coding CLI for git commands",
+                "Assistant: ask the coding CLI about this repository",
                 Some(ToolbarOp::Helper),
                 cx,
             ))
@@ -766,7 +772,7 @@ impl Workspace {
             .child(item(
                 "rail-assistant",
                 "icons/bot.svg",
-                "Git Helper",
+                "Assistant",
                 repo_helper == Some(true),
                 repo_helper.is_some(),
                 RailItem::Assistant,
@@ -819,6 +825,24 @@ impl Workspace {
         }
     }
 
+    /// Open Settings → Assistant.
+    fn open_assistant_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings_open = false;
+        if self.assistant_settings.is_none() {
+            let view =
+                cx.new(|cx| crate::assistant_settings::AssistantSettingsView::new(window, cx));
+            let sub = cx.subscribe(&view, |this, _, ev, cx| match ev {
+                crate::assistant_settings::AssistantSettingsEvent::Close => {
+                    this.assistant_settings = None;
+                    this.focus_tab = true;
+                    cx.notify();
+                }
+            });
+            self.assistant_settings = Some((view, sub));
+        }
+        cx.notify();
+    }
+
     fn render_settings(&self, p: &Palette, cx: &mut Context<Self>) -> AnyElement {
         let current = palette(cx).id;
         let zoom = appearance::zoom(cx);
@@ -862,6 +886,22 @@ impl Workspace {
                     .child(div().flex_1().child(id.label()))
                     .when(on, |d| d.child(div().text_color(p.acc).child("✓")))
             }))
+            .child(div().h(rpx(1.)).my(rpx(6.)).bg(p.bd))
+            .child(
+                div()
+                    .id("settings-assistant")
+                    .flex()
+                    .items_center()
+                    .h(rpx(26.))
+                    .px(rpx(6.))
+                    .rounded(px(5.))
+                    .cursor_pointer()
+                    .text_size(ts::UI)
+                    .hover(|s| s.bg(p.hover))
+                    .on_click(cx.listener(|this, _, w, cx| this.open_assistant_settings(w, cx)))
+                    .child(div().flex_1().child("Assistant…"))
+                    .child(div().text_color(p.fg3).child(assistant_label(cx))),
+            )
             .child(div().h(rpx(1.)).my(rpx(6.)).bg(p.bd))
             .child(
                 div()
@@ -1199,6 +1239,11 @@ impl Render for Workspace {
                 this.settings_open = true;
                 cx.notify();
             }))
+            .on_action(
+                cx.listener(|this, _: &actions::ShowAssistantSettings, w, cx| {
+                    this.open_assistant_settings(w, cx)
+                }),
+            )
             .on_action(|_: &actions::ToggleDiffLayout, _, cx| {
                 set_prefs(cx, |p| p.side_by_side = !p.side_by_side)
             })
@@ -1217,6 +1262,7 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &actions::Dismiss, w, cx| {
                 this.close_palette(w, cx);
                 this.settings_open = false;
+                this.assistant_settings = None;
                 this.manager.dismiss();
                 cx.notify();
             }))
@@ -1224,6 +1270,33 @@ impl Render for Workspace {
             .child(div().flex_1().min_h_0().flex().child(rail).child(center))
             .child(status)
             .children(settings)
+            .when_some(self.assistant_settings.as_ref(), |d, (view, _)| {
+                d.child(
+                    div()
+                        .id("assistant-settings")
+                        .absolute()
+                        .inset_0()
+                        .occlude()
+                        .bg(p.scrim)
+                        .flex()
+                        .justify_center()
+                        .items_start()
+                        .pt(rpx(48.))
+                        .child(
+                            div()
+                                .id("assistant-settings-card")
+                                .w(rpx(760.))
+                                .max_h(gpui_kit::relative(0.88))
+                                .overflow_y_scroll()
+                                .bg(p.elev)
+                                .border_1()
+                                .border_color(p.bd2)
+                                .rounded(px(10.))
+                                .shadow(ui::shadow(&p))
+                                .child(view.clone()),
+                        ),
+                )
+            })
             .when_some(self.palette.as_ref(), |d, (view, _)| {
                 d.child(
                     div()
@@ -1257,4 +1330,12 @@ pub(crate) fn is_open(ws: &Workspace, path: &Path, cx: &gpui_kit::App) -> bool {
         Tab::Repo(v) => v.read(cx).repo.root() == path,
         Tab::Manager => false,
     })
+}
+
+/// The settings menu's hint for the assistant: the chosen CLI, or "Automatic".
+fn assistant_label(cx: &gpui_kit::App) -> &'static str {
+    match cx.global::<crate::assistant::AssistantSettings>().agent {
+        Some(k) => k.display_name(),
+        None => "Automatic",
+    }
 }
