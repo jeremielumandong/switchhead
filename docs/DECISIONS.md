@@ -173,3 +173,19 @@ puts a token into a remote URL. Without an account for a remote's site, Create P
 Request opens the site's own "new pull request" page. Author avatars come from GitHub
 no-reply addresses directly, else from the matching account's service (GitHub per commit,
 GitLab by email), looked up once per email and cached as files in the data folder.
+
+## 2026-10-15 — Packaging: Switchyard's scripts, one binary, manual releases
+
+`packaging/` and the three release workflows are Switchyard's, renamed. switchhead ships
+one binary (`switchhead`, which also serves `switchhead mcp` for the assistant), so the
+packages carry no separate CLI and nothing is added to `PATH`: no `.pkg` postinstall
+symlink and no PATH section in the Windows installer. A `switchhead <path>` command-line
+launcher is a follow-up. The macOS build signs with the hardened runtime and no
+entitlements (switchhead loads no libraries at run time). The icon is the site's git-fork
+mark on Switchyard's tile, rendered by the same `generate.py`; `crates/app/build.rs` embeds
+the `.ico` on Windows.
+
+Release workflows run only by hand (`workflow_dispatch` on `main`, after CI passed for the
+commit) and fill one draft release per workspace version, like Switchyard's. Signing is
+optional on both macOS and Windows: without the secrets the package is built unsigned and
+kept as a workflow artifact, and goes to the draft only with `upload_unsigned`.

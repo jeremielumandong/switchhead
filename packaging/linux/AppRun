@@ -1,0 +1,5 @@
+#!/bin/sh
+# AppImage entry point: runs switchhead with the arguments given (a repository or folder
+# to open, or `mcp --repo <path>` for the assistant's git MCP server).
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/bin/switchhead" "$@"

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=switchhead
+GenericName=Git Client
+Comment=A fast, native Git client
+Exec=switchhead %f
+Icon=switchhead
+Terminal=false
+Categories=Development;RevisionControl;
+Keywords=git;version control;commit;branch;merge;diff;
+StartupWMClass=switchhead
