@@ -36,6 +36,8 @@ pub struct Current {
     pub name: Option<Value>,
     pub email: Option<Value>,
     pub signing_key: Option<Value>,
+    /// `commit.gpgsign` is on: commits are signed.
+    pub signs_commits: bool,
 }
 
 impl Current {
@@ -79,6 +81,8 @@ impl Repo {
             name: get(KEYS[0])?,
             email: get(KEYS[1])?,
             signing_key: get(KEYS[2])?,
+            signs_commits: get("commit.gpgsign")?
+                .is_some_and(|v| crate::signing::is_true(&v.value)),
         })
     }
 

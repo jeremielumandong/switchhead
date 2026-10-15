@@ -25,7 +25,7 @@ use crate::theme::palette;
 
 impl CommitBox {
     /// Read the identity in effect (in the background).
-    pub(super) fn load_identity(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn load_identity(&mut self, cx: &mut Context<Self>) {
         self.identity_op(|_| Ok(()), cx);
     }
 
@@ -77,7 +77,7 @@ impl CommitBox {
                 ),
             },
         };
-        let signed = cur.as_ref().and_then(|c| c.signing_key.as_ref()).is_some();
+        let signed = cur.as_ref().is_some_and(|c| c.signs_commits);
         let this = cx.entity().downgrade();
         div()
             .flex()
@@ -143,6 +143,12 @@ impl CommitBox {
                                         t3.update(cx, |b, cx| b.new_identity_dialog(window, cx));
                                 },
                             ));
+                        menu = menu.item(PopupMenuItem::new("Commit Signing…").on_click(
+                            |_, window, cx| {
+                                window
+                                    .dispatch_action(Box::new(crate::actions::SigningSettings), cx)
+                            },
+                        ));
                         let saved = cx.global::<Identities>().0.clone();
                         if !saved.is_empty() {
                             menu = menu.submenu(
@@ -179,7 +185,7 @@ impl CommitBox {
                         .text_size(ts::CAPTION)
                         .text_color(p.fg3)
                         .child(if signed {
-                            format!("{s} · signing key")
+                            format!("{s} · signed")
                         } else {
                             s.to_owned()
                         }),

@@ -254,3 +254,9 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
   other GPUI Fast crates stay on git rev `598306f`. Do not enable gpui-kit's own `gpui-fast`
   feature (that pulls the unpatched published runtime) and update `vendor/` from
   AgentOpsChat rather than editing it here.
+- SSH signatures: `%G?` is `N` (as for an unsigned commit) when `gpg.ssh.allowedSignersFile`
+  is not set, with the reason only on stderr, and `U` when the key is not listed in it;
+  `signing::verify_commit` tells signed from unsigned in process (the `gpgsig` header).
+  Cloud containers set a global `gpg.ssh.program` and `commit.gpgsign`: tests and manual
+  checks set `gpg.ssh.program=ssh-keygen` locally. gpg-agent's socket lives in
+  `GNUPGHOME`, so a long scratchpad path there fails with "No agent running".

@@ -313,7 +313,12 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
       tab) shows the commits and files and whether they apply cleanly, then commits
       (`git am`), applies, or applies and stages, optionally with a three-way merge; a
       stopped `am` uses the existing conflict banner (`switchhead_git::patch`).
-- [ ] M6-8 GPG / SSH commit signing settings and verified badges.
+- [x] M6-8 GPG / SSH commit signing settings and verified badges.
+      Commit Signing dialog (palette, Commands menu, identity menu): GPG / SSH / X.509, key,
+      program, allowed signers, sign commits and tags, this repo or all, Test Signing (a
+      throwaway commit in a temp object folder). Commit details check signed commits with
+      `git show --format=%G?` (Verified / Unverified / Bad / Signed). Deferred: badges in
+      graph rows, verifying signed tags.
 - [ ] M6-9 Open in terminal / editor / file manager; external diff and merge tools.
 - [ ] M6-10 Bisect UI (good / bad / skip, highlighted in the graph), guided: a step panel
       with the current candidate, steps left and the remaining range, ending on the first

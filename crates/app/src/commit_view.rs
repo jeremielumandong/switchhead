@@ -28,6 +28,7 @@ use gpui_kit::{
 use switchhead_git::commit::{self, CommitInfo};
 use switchhead_git::diff::{self, FileChange};
 use switchhead_git::refs::Label;
+use switchhead_git::signing::{Format, Verdict, Verification};
 use switchhead_git::{Oid, Repo};
 
 use crate::actions;
@@ -71,6 +72,8 @@ pub struct CommitView {
     labels: Vec<Label>,
     /// The repository's main remote URL (for avatars from a signed-in account).
     remote: Option<String>,
+    /// The shown commit's signature, once checked (`None` while checking or unsigned).
+    signature: Option<Verification>,
     files: Rc<Vec<FileChange>>,
     rows: Vec<FileRow>,
     collapsed: HashSet<PathBuf>,
@@ -87,6 +90,7 @@ pub struct CommitView {
     focus: FocusHandle,
     _load: Option<Task<()>>,
     _diff: Option<Task<()>>,
+    _verify: Option<Task<()>>,
     _subs: Vec<Subscription>,
 }
 
@@ -106,6 +110,7 @@ impl CommitView {
             commit: None,
             info: None,
             remote: None,
+            signature: None,
             labels: Vec::new(),
             files: Rc::default(),
             rows: Vec::new(),
@@ -122,6 +127,7 @@ impl CommitView {
             focus: cx.focus_handle(),
             _load: None,
             _diff: None,
+            _verify: None,
             _subs: subs,
         }
     }
@@ -152,6 +158,8 @@ impl CommitView {
         }
         self.commit = id;
         self.error = None;
+        self.signature = None;
+        self._verify = None;
         let Some(id) = id else {
             self.info = None;
             self.files = Rc::default();
@@ -203,6 +211,7 @@ impl CommitView {
                 .map(|f| f.path.clone())
         });
         self.info = Some(Rc::new(info));
+        self.verify(cx);
         self.files = Rc::new(files);
         self.rebuild_rows(cx);
         let keep = previous.and_then(|p| self.files.iter().position(|f| f.path == p));
@@ -212,6 +221,45 @@ impl CommitView {
         });
         self.loaded = None;
         self.select_file(keep.or(first), cx);
+    }
+
+    /// Check the shown commit's signature (in the background; git runs only for signed
+    /// commits).
+    fn verify(&mut self, cx: &mut Context<Self>) {
+        let Some(info) = self.info.as_ref().filter(|i| i.signed) else {
+            self.signature = None;
+            self._verify = None;
+            return;
+        };
+        let (id, repo) = (info.id, self.repo.clone());
+        let task = cx
+            .background_executor()
+            .spawn(async move { repo.verify_commit(id) });
+        self._verify = Some(cx.spawn(async move |this, cx| {
+            let res = task.await;
+            let _ = this.update(cx, |v, cx| {
+                if v.commit != Some(id) {
+                    return;
+                }
+                v.signature = match res {
+                    Ok(s) => s,
+                    Err(e) => Some(Verification {
+                        verdict: Verdict::CannotCheck,
+                        format: Format::OpenPgp,
+                        signer: String::new(),
+                        key: String::new(),
+                        details: e.to_string(),
+                    }),
+                };
+                cx.notify();
+            });
+        }));
+    }
+
+    /// Check the shown commit's signature again (the signing settings changed).
+    pub fn reverify(&mut self, cx: &mut Context<Self>) {
+        self.verify(cx);
+        cx.notify();
     }
 
     fn rebuild_rows(&mut self, cx: &App) {
@@ -440,9 +488,15 @@ impl CommitView {
                                 cx.write_to_clipboard(ClipboardItem::new_string(id.to_string()))
                             })
                             .child("Copy"),
-                    )
-                    .when(info.signed, |d| d.child(ui::chip("signed", p.added))),
+                    ),
             )
+            .when(info.signed, |d| {
+                d.child(
+                    row()
+                        .child(field("Signature"))
+                        .child(self.render_signature(p)),
+                )
+            })
             .when(!info.parents.is_empty(), |d| {
                 d.child(
                     row()
@@ -476,6 +530,51 @@ impl CommitView {
                             )
                         }),
                 )
+            })
+            .into_any_element()
+    }
+
+    fn render_signature(&self, p: &Palette) -> AnyElement {
+        let Some(v) = &self.signature else {
+            return div()
+                .text_size(ts::SMALL)
+                .text_color(p.fg3)
+                .child("Checking…")
+                .into_any_element();
+        };
+        let (chip, tone, text) = describe_signature(v);
+        let color = match tone {
+            Tone::Good => p.added,
+            Tone::Warn => p.modified,
+            Tone::Bad => p.deleted,
+            Tone::Neutral => p.fg3,
+        };
+        let tip = SharedString::from(match (v.details.is_empty(), v.key.is_empty()) {
+            (false, _) => v.details.clone(),
+            (true, false) => format!("Key {}", v.key),
+            (true, true) => String::new(),
+        });
+        div()
+            .id("signature")
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .items_start()
+            .gap(rpx(6.))
+            .child(ui::chip(chip, color))
+            .child(
+                // Wraps: the pane is often narrow and the reason is the point.
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_size(ts::SMALL)
+                    .text_color(p.fg2)
+                    .child(text),
+            )
+            .when(!tip.is_empty(), |d| {
+                d.tooltip(move |w, cx| {
+                    gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(w, cx)
+                })
             })
             .into_any_element()
     }
@@ -942,9 +1041,131 @@ impl Render for CommitView {
     }
 }
 
+/// How a checked signature reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Tone {
+    Good,
+    Warn,
+    Bad,
+    Neutral,
+}
+
+/// A signature's badge, its tone, and a line saying what it means.
+fn describe_signature(v: &Verification) -> (&'static str, Tone, String) {
+    let format = v.format.name();
+    // The full key is in the tooltip; SSH fingerprints are long.
+    let key: String = match v.key.chars().count() > 20 {
+        true => v.key.chars().take(16).chain(['…']).collect(),
+        false => v.key.clone(),
+    };
+    let who = match (v.signer.as_str(), key.as_str()) {
+        ("", "") => "an unknown key".to_owned(),
+        ("", key) => format!("key {key}"),
+        (signer, _) => signer.to_owned(),
+    };
+    match v.verdict {
+        Verdict::Good => (
+            "Verified",
+            Tone::Good,
+            format!("{format} signature by {who}"),
+        ),
+        Verdict::Untrusted if v.format == Format::Ssh => (
+            "Unverified",
+            Tone::Warn,
+            format!("Good SSH signature, but {who} is not in the allowed signers file"),
+        ),
+        Verdict::Untrusted => (
+            "Unverified",
+            Tone::Warn,
+            format!("Good {format} signature by {who}, but the key is not trusted"),
+        ),
+        Verdict::Expired => (
+            "Expired",
+            Tone::Warn,
+            format!("The {format} signature by {who} has expired"),
+        ),
+        Verdict::ExpiredKey => (
+            "Key expired",
+            Tone::Warn,
+            format!("Signed by {who}, whose key has expired since"),
+        ),
+        Verdict::Revoked => (
+            "Revoked",
+            Tone::Bad,
+            format!("Signed with a revoked key ({who})"),
+        ),
+        Verdict::Bad => (
+            "Bad signature",
+            Tone::Bad,
+            format!("The {format} signature does not match this commit"),
+        ),
+        Verdict::CannotCheck if v.details.contains("allowedSignersFile") => (
+            "Signed",
+            Tone::Neutral,
+            "SSH signature: add an allowed signers file in Commit Signing to verify it".to_owned(),
+        ),
+        Verdict::CannotCheck if v.details.contains("No public key") => (
+            "Signed",
+            Tone::Neutral,
+            format!("{format} signature by {who}, whose public key is not in your keyring"),
+        ),
+        Verdict::CannotCheck => (
+            "Signed",
+            Tone::Neutral,
+            // GnuPG's last line says why ("Can't check signature: ...").
+            match v.details.lines().rev().find(|l| !l.trim().is_empty()) {
+                Some(why) => format!(
+                    "{format} signature that cannot be checked: {}",
+                    why.trim().trim_start_matches("gpg: ")
+                ),
+                None => format!("{format} signature that cannot be checked"),
+            },
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn describes_signatures() {
+        let mut v = Verification {
+            verdict: Verdict::Good,
+            format: Format::Ssh,
+            signer: "jane@example.com".into(),
+            key: "SHA256:abc".into(),
+            details: String::new(),
+        };
+        let (chip, tone, text) = describe_signature(&v);
+        assert_eq!((chip, tone), ("Verified", Tone::Good));
+        assert_eq!(text, "SSH signature by jane@example.com");
+        v.verdict = Verdict::Untrusted;
+        v.signer.clear();
+        assert_eq!(
+            describe_signature(&v).2,
+            "Good SSH signature, but key SHA256:abc is not in the allowed signers file"
+        );
+        v.key = "SHA256:WcwWaq9r3ZzDBRF939k4qqvJYIC8".into();
+        assert!(describe_signature(&v).2.contains("key SHA256:WcwWaq9r3…"));
+        v.verdict = Verdict::CannotCheck;
+        v.details = "gpg.ssh.allowedSignersFile needs to be configured".into();
+        assert_eq!(describe_signature(&v).1, Tone::Neutral);
+        v.format = Format::OpenPgp;
+        v.details = "gpg: Signature made today\ngpg: Can't check signature: No public key".into();
+        v.key = "6E2A1B3C4D5E6F70".into();
+        assert_eq!(
+            describe_signature(&v).2,
+            "GPG signature by key 6E2A1B3C4D5E6F70, whose public key is not in your keyring"
+        );
+        v.details = "gpg: Signature made today\ngpg: keydb error\n".into();
+        assert_eq!(
+            describe_signature(&v).2,
+            "GPG signature that cannot be checked: keydb error"
+        );
+        v.verdict = Verdict::Bad;
+        assert_eq!(describe_signature(&v).1, Tone::Bad);
+    }
 
     #[test]
     fn splits_paths() {
