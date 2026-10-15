@@ -216,6 +216,38 @@ pub fn commit_message_prompt(conventional: bool, amend: bool) -> String {
     )
 }
 
+/// The prompt asking for the resolved content of the conflicted file `path`.
+pub fn conflict_prompt(path: &str) -> String {
+    format!(
+        "Resolve the merge conflicts in `{path}` in this repository.\n\n\
+         Read the file with the `conflicts` tool (path `{path}`): it gives the work-tree file \
+         with conflict markers and the base, ours and theirs versions. Use `status`, `log` and \
+         `show` to learn what each side meant to change. Keep both sides' intent where they \
+         are compatible; where they are not, prefer the change that keeps the code working, \
+         and say so.\n\n\
+         Reply with two or three sentences on how you resolved each conflict, then the whole \
+         resolved file in one fenced code block, with no conflict markers left. If the file \
+         itself contains ``` fences, fence it with more backticks. Nothing after the block."
+    )
+}
+
+/// Split an answer into the text before its last fenced code block and the block's
+/// content (with a final newline). `None` when it has no closed block.
+pub fn fenced_block(answer: &str) -> Option<(String, String)> {
+    let lines: Vec<&str> = answer.lines().collect();
+    let ticks = |l: &str| l.trim_start().chars().take_while(|c| *c == '`').count();
+    // The outermost block: the first opening fence and the last line closing it.
+    let open = lines.iter().position(|l| ticks(l) >= 3)?;
+    let fence = ticks(lines[open]);
+    let close = (open + 1..lines.len())
+        .rev()
+        .find(|&j| ticks(lines[j]) >= fence && lines[j].trim().chars().all(|c| c == '`'))?;
+    let note = lines[..open].join("\n").trim().to_owned();
+    let mut body = lines[open + 1..close].join("\n");
+    body.push('\n');
+    Some((note, body))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,6 +260,23 @@ mod tests {
         );
         assert_eq!(clean_message("```text\nAdd x\n```"), "Add x");
         assert_eq!(clean_message("  Add x \n"), "Add x");
+    }
+
+    #[test]
+    fn finds_the_resolved_file() {
+        let a = "Kept both.\n\n```rust\nfn a() {}\n```\n";
+        assert_eq!(
+            fenced_block(a),
+            Some(("Kept both.".into(), "fn a() {}\n".into()))
+        );
+        // A Markdown file with its own fences inside a longer one.
+        let md = "Merged.\n````markdown\n# T\n```sh\nls\n```\n````";
+        assert_eq!(
+            fenced_block(md).map(|(_, b)| b),
+            Some("# T\n```sh\nls\n```\n".into())
+        );
+        assert_eq!(fenced_block("no block"), None);
+        assert_eq!(fenced_block("```\nunclosed"), None);
     }
 
     #[test]
