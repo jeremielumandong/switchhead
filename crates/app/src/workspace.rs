@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use gpui_kit::component::TitleBar;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::menu::DropdownMenu as _;
+use gpui_kit::component::menu::{DropdownMenu as _, PopupMenu};
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -52,6 +52,11 @@ pub struct Workspace {
         Entity<crate::assistant_settings::AssistantSettingsView>,
         gpui_kit::Subscription,
     )>,
+    /// Settings → Custom Commands, while open.
+    custom_commands: Option<(
+        Entity<crate::custom_commands_view::CustomCommandsView>,
+        gpui_kit::Subscription,
+    )>,
     /// Move keyboard focus to the active tab on the next frame (it just changed).
     focus_tab: bool,
     /// A message for the status bar (an open that failed).
@@ -62,6 +67,7 @@ pub struct Workspace {
     _messages: gpui_kit::Subscription,
     _identities: gpui_kit::Subscription,
     _assistant: gpui_kit::Subscription,
+    _custom_commands: gpui_kit::Subscription,
     /// Quick Launch, while open.
     palette: Option<(Entity<PaletteView>, gpui_kit::Subscription)>,
     _activation: gpui_kit::Subscription,
@@ -134,6 +140,14 @@ impl Workspace {
                 this.save(cx);
             }
         });
+        let custom_commands =
+            cx.observe_global::<crate::custom_commands::CustomCommands>(|this, cx| {
+                let m = cx.global::<crate::custom_commands::CustomCommands>();
+                if this.state.custom_commands != *m {
+                    this.state.custom_commands = m.clone();
+                    this.save(cx);
+                }
+            });
         // Coming back to the window: pick up what changed in a terminal meanwhile.
         let activation = cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active()
@@ -152,6 +166,7 @@ impl Workspace {
             focus: cx.focus_handle(),
             settings_open: false,
             assistant_settings: None,
+            custom_commands: None,
             focus_tab: false,
             notice: None,
             _save: None,
@@ -160,6 +175,7 @@ impl Workspace {
             _messages: messages,
             _identities: identities,
             _assistant: assistant,
+            _custom_commands: custom_commands,
             palette: None,
             _activation: activation,
             repo_subs: Vec::new(),
@@ -511,7 +527,28 @@ impl Workspace {
                 Some(ToolbarOp::Branch),
                 cx,
             ))
-            .child(self.render_flow_tool(p, busy))
+            .child(self.render_menu_tool(
+                (
+                    "tool-flow",
+                    "icons/sh-git-fork.svg",
+                    "Git-flow",
+                    "Start and finish features, releases and hotfixes",
+                ),
+                busy,
+                p,
+                crate::repo_view::build_flow_menu,
+            ))
+            .child(self.render_menu_tool(
+                (
+                    "tool-commands",
+                    "icons/sh-command.svg",
+                    "Commands",
+                    "Your custom commands for this repository",
+                ),
+                busy,
+                p,
+                crate::repo_view::build_commands_menu,
+            ))
             .child(div().flex_1())
             .child(tool(
                 "tool-refresh",
@@ -540,8 +577,15 @@ impl Workspace {
             .into_any_element()
     }
 
-    /// The Git-flow tool: a menu to set it up, or start and finish branches.
-    fn render_flow_tool(&self, p: &Palette, busy: bool) -> AnyElement {
+    /// A toolbar tool (id, icon, label, tooltip) that opens a menu of the active repository
+    /// tab's (`build`).
+    fn render_menu_tool(
+        &self,
+        (id, icon, label, tip): (&'static str, &'static str, &'static str, &'static str),
+        busy: bool,
+        p: &Palette,
+        build: fn(PopupMenu, &gpui_kit::WeakEntity<RepoView>, &mut Context<PopupMenu>) -> PopupMenu,
+    ) -> AnyElement {
         let view = self.active_repo().map(|v| v.downgrade());
         let color = if view.is_some() && !busy {
             p.fg2
@@ -556,13 +600,8 @@ impl Workspace {
             .gap(rpx(2.))
             .text_size(ts::CAPTION)
             .text_color(color)
-            .child(
-                svg()
-                    .path("icons/sh-git-fork.svg")
-                    .size(rpx(17.))
-                    .text_color(color),
-            )
-            .child("Git-flow");
+            .child(svg().path(icon).size(rpx(17.)).text_color(color))
+            .child(label);
         let Some(view) = view else {
             return div()
                 .flex()
@@ -573,14 +612,14 @@ impl Workspace {
                 .child(content)
                 .into_any_element();
         };
-        Button::new("tool-flow")
+        Button::new(id)
             .ghost()
             .w(rpx(52.))
             .h(rpx(42.))
             .px_0()
             .child(content)
-            .tooltip("Start and finish features, releases and hotfixes")
-            .dropdown_menu(move |menu, _, cx| crate::repo_view::build_flow_menu(menu, &view, cx))
+            .tooltip(tip)
+            .dropdown_menu(move |menu, _, cx| build(menu, &view, cx))
             .into_any_element()
     }
 
@@ -890,6 +929,24 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Open Settings → Custom Commands.
+    fn open_custom_commands(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings_open = false;
+        if self.custom_commands.is_none() {
+            let view =
+                cx.new(|cx| crate::custom_commands_view::CustomCommandsView::new(window, cx));
+            let sub = cx.subscribe(&view, |this, _, ev, cx| match ev {
+                crate::custom_commands_view::CustomCommandsEvent::Close => {
+                    this.custom_commands = None;
+                    this.focus_tab = true;
+                    cx.notify();
+                }
+            });
+            self.custom_commands = Some((view, sub));
+        }
+        cx.notify();
+    }
+
     fn render_settings(&self, p: &Palette, cx: &mut Context<Self>) -> AnyElement {
         let current = palette(cx).id;
         let zoom = appearance::zoom(cx);
@@ -948,6 +1005,20 @@ impl Workspace {
                     .on_click(cx.listener(|this, _, w, cx| this.open_assistant_settings(w, cx)))
                     .child(div().flex_1().child("Assistant…"))
                     .child(div().text_color(p.fg3).child(assistant_label(cx))),
+            )
+            .child(
+                div()
+                    .id("settings-custom-commands")
+                    .flex()
+                    .items_center()
+                    .h(rpx(26.))
+                    .px(rpx(6.))
+                    .rounded(px(5.))
+                    .cursor_pointer()
+                    .text_size(ts::UI)
+                    .hover(|s| s.bg(p.hover))
+                    .on_click(cx.listener(|this, _, w, cx| this.open_custom_commands(w, cx)))
+                    .child(div().flex_1().child("Custom Commands…")),
             )
             .child(div().h(rpx(1.)).my(rpx(6.)).bg(p.bd))
             .child(
@@ -1291,6 +1362,9 @@ impl Render for Workspace {
                     this.open_assistant_settings(w, cx)
                 }),
             )
+            .on_action(cx.listener(|this, _: &actions::EditCustomCommands, w, cx| {
+                this.open_custom_commands(w, cx)
+            }))
             .on_action(|_: &actions::ToggleDiffLayout, _, cx| {
                 set_prefs(cx, |p| p.side_by_side = !p.side_by_side)
             })
@@ -1310,6 +1384,7 @@ impl Render for Workspace {
                 this.close_palette(w, cx);
                 this.settings_open = false;
                 this.assistant_settings = None;
+                this.custom_commands = None;
                 this.manager.dismiss();
                 cx.notify();
             }))
@@ -1333,6 +1408,33 @@ impl Render for Workspace {
                             div()
                                 .id("assistant-settings-card")
                                 .w(rpx(760.))
+                                .max_h(gpui_kit::relative(0.88))
+                                .overflow_y_scroll()
+                                .bg(p.elev)
+                                .border_1()
+                                .border_color(p.bd2)
+                                .rounded(px(10.))
+                                .shadow(ui::shadow(&p))
+                                .child(view.clone()),
+                        ),
+                )
+            })
+            .when_some(self.custom_commands.as_ref(), |d, (view, _)| {
+                d.child(
+                    div()
+                        .id("custom-commands")
+                        .absolute()
+                        .inset_0()
+                        .occlude()
+                        .bg(p.scrim)
+                        .flex()
+                        .justify_center()
+                        .items_start()
+                        .pt(rpx(48.))
+                        .child(
+                            div()
+                                .id("custom-commands-card")
+                                .w(rpx(820.))
                                 .max_h(gpui_kit::relative(0.88))
                                 .overflow_y_scroll()
                                 .bg(p.elev)

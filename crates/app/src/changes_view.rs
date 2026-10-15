@@ -111,6 +111,13 @@ pub enum ChangesEvent {
     OpenSubmodule(std::path::PathBuf),
     /// Update the submodule at this path (check out the commit the index records).
     UpdateSubmodule(std::path::PathBuf),
+    /// Run custom command `index` on a file.
+    RunCustom {
+        /// The command's index in [`crate::custom_commands::CustomCommands`].
+        index: usize,
+        /// The file.
+        path: std::path::PathBuf,
+    },
     /// Lock (`true`) or unlock a file with LFS.
     LfsLock {
         /// The file.

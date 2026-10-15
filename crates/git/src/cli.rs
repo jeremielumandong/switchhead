@@ -348,6 +348,124 @@ impl Git {
     }
 }
 
+/// Run a user's own shell command in `cwd` (custom commands): `sh -c` on Unix, `cmd /C`
+/// on Windows, with `env` added. Its output (stdout and stderr together) goes to `on_line`
+/// line by line as it arrives and is returned at the end. Prompts and editors are off as
+/// for git. `cancel` kills it and, on Unix, what it started. A non-zero exit is an
+/// [`Error::Command`] whose message is the end of the output.
+pub fn run_shell(
+    cwd: &Path,
+    script: &str,
+    env: &[(&str, &str)],
+    cancel: &Cancel,
+    mut on_line: impl FnMut(&str),
+) -> Result<String> {
+    let started = Instant::now();
+    let (reader, writer) = std::io::pipe()?;
+    let mut cmd = shell_command(script);
+    cmd.current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_EDITOR", "true")
+        .env("GIT_PAGER", "cat")
+        .envs(env.iter().copied())
+        .stdin(Stdio::null())
+        .stdout(writer.try_clone()?)
+        .stderr(writer);
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    let spawned = cmd.spawn();
+    // The command holds the pipe's write ends; drop them so the pipe ends with the child.
+    drop(cmd);
+    let mut child = spawned?;
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    std::thread::spawn(move || {
+        let mut r = BufReader::new(reader);
+        loop {
+            let mut chunk = Vec::new();
+            match read_until_any(&mut r, &mut chunk) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    if tx.send(chunk).is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+    let mut all = Vec::new();
+    let mut killed = false;
+    // A process the command left running in the background can keep the pipe open.
+    let mut exited: Option<Instant> = None;
+    loop {
+        if cancel.is_cancelled() && !killed {
+            kill_tree(&mut child);
+            killed = true;
+        }
+        if exited.is_none() && matches!(child.try_wait(), Ok(Some(_))) {
+            exited = Some(Instant::now());
+        }
+        if exited.is_some_and(|t| t.elapsed() > std::time::Duration::from_millis(500)) {
+            break;
+        }
+        match rx.recv_timeout(std::time::Duration::from_millis(50)) {
+            Ok(chunk) => {
+                all.extend_from_slice(&chunk);
+                let line = String::from_utf8_lossy(&chunk);
+                let line = line.trim_end_matches(['\r', '\n']);
+                if !line.is_empty() && !killed {
+                    on_line(line);
+                }
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    let status = child.wait()?;
+    let text = String::from_utf8_lossy(&all).into_owned();
+    tracing::debug!(
+        ms = started.elapsed().as_millis() as u64,
+        code = status.code(),
+        "custom command"
+    );
+    if cancel.is_cancelled() {
+        return Err(Error::Command {
+            args: "custom command".into(),
+            code: status.code(),
+            message: "cancelled".into(),
+        });
+    }
+    if status.success() {
+        return Ok(text);
+    }
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    let tail = lines[lines.len().saturating_sub(20)..].join("\n");
+    Err(Error::Command {
+        args: "custom command".into(),
+        code: status.code(),
+        message: if tail.is_empty() {
+            format!("exit code {:?}", status.code())
+        } else {
+            tail
+        },
+    })
+}
+
+#[cfg(unix)]
+fn shell_command(script: &str) -> Command {
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c").arg(script);
+    cmd
+}
+
+#[cfg(windows)]
+fn shell_command(script: &str) -> Command {
+    use std::os::windows::process::CommandExt as _;
+    let mut cmd = Command::new("cmd");
+    // `/S /C "..."`: cmd strips the outer quotes and runs the rest as typed.
+    cmd.raw_arg(format!("/S /C \"{script}\""));
+    cmd
+}
+
 /// Read up to and including the next `\n` or `\r`.
 /// Kill git and, on Unix, its process group (see [`Git::run_streaming`]).
 fn kill_tree(child: &mut std::process::Child) {
@@ -491,6 +609,46 @@ mod tests {
         .unwrap();
         let msg = git.text(&["log", "-1", "--format=%B"]).unwrap();
         assert_eq!(msg.trim(), "from stdin\n\nbody");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runs_shell_commands() {
+        let r = TestRepo::new();
+        let mut lines = Vec::new();
+        let out = run_shell(
+            r.path(),
+            "echo one; echo two >&2; echo \"$X\"",
+            &[("X", "three")],
+            &Cancel::default(),
+            |l| lines.push(l.to_owned()),
+        )
+        .unwrap();
+        assert_eq!(lines, ["one", "two", "three"]);
+        assert_eq!(out, "one\ntwo\nthree\n");
+        let err = run_shell(
+            r.path(),
+            "echo bad; exit 3",
+            &[],
+            &Cancel::default(),
+            |_| {},
+        )
+        .unwrap_err();
+        match err {
+            Error::Command { code, message, .. } => {
+                assert_eq!((code, message.as_str()), (Some(3), "bad"));
+            }
+            other => panic!("{other:?}"),
+        }
+        let cancel = Cancel::default();
+        let c = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            c.cancel();
+        });
+        let started = Instant::now();
+        assert!(run_shell(r.path(), "sleep 21", &[], &cancel, |_| {}).is_err());
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
     }
 
     #[test]

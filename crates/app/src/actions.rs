@@ -33,6 +33,7 @@ actions!(
         NewRepository,
         ShowSettings,
         ShowAssistantSettings,
+        EditCustomCommands,
         LfsFetch,
         LfsFetchAll,
         LfsPull,
@@ -169,6 +170,7 @@ pub fn commands() -> Vec<Command> {
             ShowAssistantSettings,
             false,
         ),
+        c("Custom Commands…", "Settings", EditCustomCommands, false),
         c(
             "Toggle Inline / Side-by-Side Diff",
             "Diff",

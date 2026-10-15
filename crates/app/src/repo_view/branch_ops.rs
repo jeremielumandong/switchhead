@@ -640,10 +640,27 @@ pub(super) fn build_ref_menu(
         );
     }
     let copy = name.clone();
-    menu.item(
-        PopupMenuItem::new("Copy Name").on_click(move |_, _, cx| {
+    menu =
+        menu.item(PopupMenuItem::new("Copy Name").on_click(move |_, _, cx| {
             cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()))
-        }),
+        }));
+    let (view_c, on) = (
+        view.clone(),
+        super::custom_ops::CustomOn {
+            sha: id.map(|i| i.to_string()),
+            reference: Some(name.clone()),
+            file: None,
+        },
+    );
+    crate::custom_commands::add_to_menu(
+        menu,
+        crate::custom_commands::CommandTarget::Ref,
+        v.read(cx).busy(),
+        move |i, window, cx| {
+            let on = on.clone();
+            let _ = view_c.update(cx, |v, cx| v.run_custom_command(i, on, window, cx));
+        },
+        cx,
     )
 }
 
