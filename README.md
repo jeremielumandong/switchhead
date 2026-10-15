@@ -12,8 +12,8 @@ command line.
 
 ![Commit graph in the dark theme](docs/screenshots/commit-graph-dark.png)
 
-> switchhead is in active development. Everything described under **Features** works
-> today; items under **Coming next** are planned (see [`PLAN.md`](PLAN.md)).
+> switchhead is in active development: everything below works today, and
+> [`PLAN.md`](PLAN.md) lists what comes next.
 
 ## Why switchhead
 
@@ -47,7 +47,7 @@ change or when the window regains focus.
 ### Commit details and diffs
 
 Select a commit to see its header (author, committer, date, parents you can jump to, refs,
-full message, a **signed** badge), its changed files as a list or a folder tree, and each
+full message, the signature checked as **Verified**, **Unverified** or **Bad**), its changed files as a list or a folder tree, and each
 file's diff with syntax highlighting and word-level highlights. Diffs come **inline** or
 **side by side**, with adjustable context lines and an ignore-whitespace switch shared by
 all tabs.
@@ -147,6 +147,42 @@ theme and zoom are remembered.
 
 ![Repository manager in the light theme](docs/screenshots/repository-manager-light.png)
 
+### History tools
+
+Right-click a commit to cherry-pick, revert, reset (soft, mixed or hard), create a branch
+or tag there, save or apply patches, or open it on GitHub, GitLab or Bitbucket. Rebase
+interactively by dragging commits and choosing pick, reword, edit, squash, fixup or drop.
+Search commits by message, author, id or content, read blame and file history, browse the
+file tree at any revision, look through the reflog, and undo risky actions.
+
+![Interactive rebase editor](docs/screenshots/rebase-editor.png)
+
+![Blame](docs/screenshots/blame.png)
+
+### Assistant
+
+Claude Code, Codex CLI, Gemini CLI or a custom coding CLI writes commit messages, proposes
+conflict resolutions, explains git commands and reviews branches. It runs in an empty
+temporary folder and works through switchhead's read-only git MCP server, so it never
+changes your repository itself: you review and apply every proposal. Each CLI uses its own
+login.
+
+![The assistant proposes a conflict resolution](docs/screenshots/assistant-conflict-proposal.png)
+
+![The assistant answers a git question with commands to run](docs/screenshots/assistant-answer.png)
+
+### Advanced
+
+Git LFS (locks, fetch and pull, pointer-aware diffs), submodules and worktrees, git-flow,
+custom commands, hosting accounts for GitHub, GitLab, Bitbucket and Azure DevOps (clone
+from your account, create pull requests, author avatars), commit signing settings with
+GPG, SSH or X.509, identity profiles, a guided **bisect**, a diff minimap, and Open in
+Terminal, Editor, File Manager or your external diff and merge tools.
+
+![A guided bisect found the first bad commit](docs/screenshots/bisect-found.png)
+
+![A verified SSH signature](docs/screenshots/signature-verified.png)
+
 ### Themes and zoom
 
 Ten themes: switchhead Dark and Light, Nord, Dracula, Catppuccin Mocha and Latte, Tokyo
@@ -181,20 +217,14 @@ Ctrl on Linux and Windows, Cmd on macOS.
 | Ctrl/Cmd+, | Appearance |
 | Ctrl/Cmd + / − / 0 | Zoom in / out / reset |
 
-## Coming next
+## Install
 
-- **History tools:** commit context menu (cherry-pick, revert, reset, create tag here,
-  patches, open on GitHub/GitLab/Bitbucket), interactive rebase editor, tags and stash
-  management, remotes editor, commit and content search, blame and file history, reflog,
-  file tree at any revision, and undo for risky actions.
-- **Assistant:** Claude Code, Codex CLI, Gemini CLI or a custom coding CLI that writes
-  commit messages, proposes conflict resolutions, explains git commands and reviews
-  branches. It works through a read-only git MCP server and never changes your repository
-  itself: you review and apply every proposal.
-- **Advanced:** Git LFS, submodule and worktree management, git-flow, custom commands,
-  hosting accounts and pull requests, signing settings, bisect, a diff minimap and
-  identity profiles.
-- **Release:** installers for Linux (AppImage), macOS and Windows.
+Each release on [switchhead's website](https://jeremielumandong.github.io/switchhead/)
+comes as an AppImage for Linux (x86_64; make it executable and run it), a universal disk image for
+macOS 11 or newer (drag switchhead to Applications), and an installer for Windows 10 or
+newer that needs no administrator rights. switchhead uses the `git` on your `PATH`, so
+install git first. Until the first release is out, [build from source](#building-from-source)
+or build a package yourself ([Packages](#packages)).
 
 ## Building from source
 
@@ -261,6 +291,9 @@ folder of its data folder and offers to show it at the next start; reports are n
 | Crate | What it does |
 | --- | --- |
 | `crates/git` (`switchhead-git`) | Git engine: gitoxide reads, `git` CLI writes, streaming log, incremental graph layout, status, diff, partial staging, conflicts, rebase, blame |
+| `crates/hosting` (`switchhead-hosting`) | GitHub, GitLab, Bitbucket and Azure DevOps APIs, tokens in the keychain, the update feed |
+| `crates/agents` (`switchhead-agents`) | Coding-CLI adapters and runner for the assistant |
+| `crates/mcp` (`switchhead-mcp`) | The read-only git MCP server the assistant uses (`switchhead mcp`) |
 | `crates/app` (`switchhead-app`) | The GPUI application |
 
 switchhead shares its design system with
