@@ -144,7 +144,11 @@ pub fn prose_blocks(text: &str) -> Vec<String> {
     let mut open = false;
     for line in text.lines() {
         let line = line.trim().replace("**", "");
-        let item = line.starts_with("- ")
+        // A Markdown heading reads as its own line.
+        let heading = line.starts_with('#');
+        let line = line.trim_start_matches('#').trim_start().to_owned();
+        let item = heading
+            || line.starts_with("- ")
             || line.starts_with("* ")
             || line.split_once(". ").is_some_and(|(n, _)| {
                 !n.is_empty() && n.len() <= 2 && n.chars().all(|c| c.is_ascii_digit())
@@ -161,7 +165,7 @@ pub fn prose_blocks(text: &str) -> Vec<String> {
                     None => line,
                 };
                 blocks.push(line);
-                open = true;
+                open = !heading;
             }
         }
     }
@@ -305,10 +309,11 @@ mod tests {
 
     #[test]
     fn keeps_list_items_apart() {
-        let t = "Two steps:\nfirst this.\n\n- **Safe:** keeps\n  your files\n- Local only\n1. One";
+        let t = "## Summary\nTwo steps:\nfirst this.\n\n- **Safe:** keeps\n  your files\n- Local only\n1. One";
         assert_eq!(
             prose_blocks(t),
             [
+                "Summary",
                 "Two steps: first this.",
                 "• Safe: keeps your files",
                 "• Local only",

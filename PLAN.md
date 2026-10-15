@@ -263,7 +263,8 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
 - [x] M5-5 Git command helper: "what do you want to do?" → explanation plus commands in a
       ```bash block; each command runs only when the user clicks Run (shown with its output).
   Git Helper panel beside the history (toolbar and rail Assistant, Ctrl/Cmd+Shift+G, palette): the coding CLI reads the repository through the MCP tools and answers with an explanation and one bash block. `command_line` splits each line like a shell; only plain `git` lines get Run (pipes, `&&`, variables, globs and `<placeholders>` get Copy and a note). Run executes without a shell, shows Done / Failed with the output, and reloads the view; commands that can lose work (reset --hard, restore, clean -f, force push, branch -D, stash drop, rebase...) confirm first. Checked with Claude Code 2.1.300: "undo my last commit" ran `git reset --soft HEAD~1`; "throw away my changes" asked before `git restore`.
-- [ ] M5-6 Branch review (summary and findings for a branch vs its base) and explain-commit.
+- [x] M5-6 Branch review (summary and findings for a branch vs its base) and explain-commit.
+  Branch menu "Review Against <base>" (the first of main / master / develop / trunk that is not the branch or its upstream, local then remote, else the upstream) and commit menu "Explain Commit", both also in the palette for the current branch and selected commit. The answer shows in the Git Helper panel (summary, then findings with `path:line`); the prompts forbid commands. Headings and lists render as their own lines. Checked with Claude Code 2.1.300: it read `log`, `diff` (range) and `show` for the review, and `show` / `log` to explain a commit.
 - [ ] M5-7 Assistant panel (port Switchyard's), settings (which CLI, model, extra args).
 
 ## M6 — Advanced (Fork parity)

@@ -114,8 +114,18 @@ impl GitHelper {
         if question.is_empty() {
             return;
         }
-        let settings = cx.global::<crate::assistant::AssistantSettings>().clone();
         let prompt = crate::assistant::command_prompt(&question);
+        self.input.update(cx, |s, cx| s.set_value("", window, cx));
+        self.ask_prompt(question, prompt, cx);
+    }
+
+    /// Run `prompt` (shown as `title`) in place of the current answer, stopping a run
+    /// still in progress. Explain Commit and Review Branch come through here.
+    pub fn ask_prompt(&mut self, title: String, prompt: String, cx: &mut Context<Self>) {
+        if let Some(c) = self.asking.take() {
+            c.cancel();
+        }
+        let settings = cx.global::<crate::assistant::AssistantSettings>().clone();
         let (cancel, rx) = match crate::assistant::spawn(&settings, self.repo.root(), prompt) {
             Ok(r) => r,
             Err(e) => {
@@ -126,11 +136,10 @@ impl GitHelper {
         };
         self.asking = Some(cancel);
         self.error = None;
-        self.question = Some(question);
+        self.question = Some(title);
         self.parts.clear();
         // A command still running finishes, but its output belonged to the old answer.
         self.runs.clear();
-        self.input.update(cx, |s, cx| s.set_value("", window, cx));
         cx.spawn(async move |this, cx| {
             let res = rx
                 .await
