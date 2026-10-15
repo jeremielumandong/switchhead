@@ -9,6 +9,7 @@ use gpui_kit::{Context, ParentElement as _, Styled as _, WeakEntity, Window, div
 use super::{OpStatus, RepoView};
 use crate::appearance::{editor_font_family, ts};
 use crate::custom_commands::{self, CommandTarget, CustomCommands, Vars};
+use crate::external::ExternalKind;
 use crate::theme::palette;
 
 /// What a custom command runs on, besides the repository.
@@ -142,6 +143,15 @@ pub(crate) fn build_commands_menu(
         menu
     };
     let view_pr = view.clone();
+    let view_s = view.clone();
+    let external = |label: &'static str, kind: ExternalKind| {
+        let view = view.clone();
+        PopupMenuItem::new(label).on_click(move |_, _, cx| {
+            let _ = view.update(cx, |v, cx| {
+                v.open_external(kind, std::path::PathBuf::new(), None, cx)
+            });
+        })
+    };
     menu.separator()
         .item(
             PopupMenuItem::new("Create Pull Request…")
@@ -157,9 +167,14 @@ pub(crate) fn build_commands_menu(
                     let _ = view_p.update(cx, |v, cx| v.pick_patches(window, cx));
                 }),
         )
+        .separator()
+        .item(external("Open in Terminal", ExternalKind::Terminal))
+        .item(external("Open in Editor", ExternalKind::Editor))
+        .item(external("Show in File Manager", ExternalKind::FileManager))
+        .separator()
         .item(
-            PopupMenuItem::new("Commit Signing…").on_click(|_, window, cx| {
-                window.dispatch_action(Box::new(crate::actions::SigningSettings), cx)
+            PopupMenuItem::new("Commit Signing…").on_click(move |_, window, cx| {
+                let _ = view_s.update(cx, |v, cx| v.signing_settings(window, cx));
             }),
         )
         .item(

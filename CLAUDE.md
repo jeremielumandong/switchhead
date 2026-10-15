@@ -260,3 +260,7 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
   Cloud containers set a global `gpg.ssh.program` and `commit.gpgsign`: tests and manual
   checks set `gpg.ssh.program=ssh-keygen` locally. gpg-agent's socket lives in
   `GNUPGHOME`, so a long scratchpad path there fails with "No agent running".
+- `difftool.<name>.cmd` runs in a shell where `$LOCAL` / `$REMOTE` are plain (not exported)
+  variables: pass them as arguments to a nested `sh -c`, or it sees them empty. Without
+  `diff.tool` (or `merge.tool`) git difftool falls back to terminal tools such as vimdiff,
+  which hang with no terminal, so the app refuses to run it until a tool is chosen.

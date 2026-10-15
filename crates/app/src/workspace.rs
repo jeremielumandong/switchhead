@@ -74,6 +74,7 @@ pub struct Workspace {
     _assistant: gpui_kit::Subscription,
     _custom_commands: gpui_kit::Subscription,
     _accounts: gpui_kit::Subscription,
+    _external: gpui_kit::Subscription,
     /// Quick Launch, while open.
     palette: Option<(Entity<PaletteView>, gpui_kit::Subscription)>,
     _activation: gpui_kit::Subscription,
@@ -163,6 +164,13 @@ impl Workspace {
                 cx.notify();
             }
         });
+        let external = cx.observe_global::<crate::external::ExternalTools>(|this, cx| {
+            let m = cx.global::<crate::external::ExternalTools>();
+            if this.state.external_tools != *m {
+                this.state.external_tools = m.clone();
+                this.save(cx);
+            }
+        });
         // Coming back to the window: pick up what changed in a terminal meanwhile.
         let activation = cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active()
@@ -193,6 +201,7 @@ impl Workspace {
             _assistant: assistant,
             _custom_commands: custom_commands,
             _accounts: accounts,
+            _external: external,
             palette: None,
             _activation: activation,
             repo_subs: Vec::new(),
@@ -442,6 +451,12 @@ impl Workspace {
             ToolbarOp::Branch => v.new_branch_at_selection(window, cx),
             ToolbarOp::Refresh => v.reload(cx),
             ToolbarOp::Helper => v.toggle_helper(window, cx),
+            ToolbarOp::Terminal => v.open_external(
+                crate::external::ExternalKind::Terminal,
+                std::path::PathBuf::new(),
+                None,
+                cx,
+            ),
         });
     }
 
@@ -456,7 +471,11 @@ impl Workspace {
                     op: Option<ToolbarOp>,
                     cx: &mut Context<Self>| {
             let enabled = op.is_some()
-                && !(busy && !matches!(op, Some(ToolbarOp::Refresh | ToolbarOp::Helper)));
+                && !(busy
+                    && !matches!(
+                        op,
+                        Some(ToolbarOp::Refresh | ToolbarOp::Helper | ToolbarOp::Terminal)
+                    ));
             div()
                 .id(id)
                 .flex()
@@ -579,8 +598,8 @@ impl Workspace {
                 "tool-terminal",
                 "icons/square-terminal.svg",
                 "Terminal",
-                "Open a terminal here (coming soon)",
-                None,
+                "Open a terminal in this repository",
+                Some(ToolbarOp::Terminal),
                 cx,
             ))
             .child(tool(
@@ -1072,6 +1091,24 @@ impl Workspace {
                         n => n.to_string(),
                     })),
             )
+            .child(
+                div()
+                    .id("settings-external-tools")
+                    .flex()
+                    .items_center()
+                    .h(rpx(26.))
+                    .px(rpx(6.))
+                    .rounded(px(5.))
+                    .cursor_pointer()
+                    .text_size(ts::UI)
+                    .hover(|s| s.bg(p.hover))
+                    .on_click(cx.listener(|this, _, w, cx| {
+                        this.settings_open = false;
+                        crate::external_view::open(w, cx);
+                        cx.notify();
+                    }))
+                    .child(div().flex_1().child("External Tools…")),
+            )
             .child(div().h(rpx(1.)).my(rpx(6.)).bg(p.bd))
             .child(
                 div()
@@ -1310,6 +1347,7 @@ enum ToolbarOp {
     Branch,
     Refresh,
     Helper,
+    Terminal,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1417,6 +1455,7 @@ impl Render for Workspace {
             .on_action(
                 cx.listener(|this, _: &actions::ShowAccounts, w, cx| this.open_accounts(w, cx)),
             )
+            .on_action(|_: &actions::ShowExternalTools, w, cx| crate::external_view::open(w, cx))
             .on_action(cx.listener(|this, _: &actions::EditCustomCommands, w, cx| {
                 this.open_custom_commands(w, cx)
             }))

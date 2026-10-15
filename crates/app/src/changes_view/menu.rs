@@ -404,6 +404,27 @@ pub(super) fn build(
             );
         }
     }
+    if let [path] = t.paths.as_slice() {
+        use crate::external::ExternalKind;
+        let staged = t.side == Some(Side::Staged);
+        let untracked = !t.untracked.is_empty();
+        let item = |label: &'static str, kind: ExternalKind| {
+            let (view, path) = (view.clone(), path.clone());
+            PopupMenuItem::new(label).on_click(move |_, _, cx| {
+                let path = path.clone();
+                let _ = view.update(cx, |_, cx| {
+                    cx.emit(ChangesEvent::OpenExternal { kind, path, staged })
+                });
+            })
+        };
+        menu = menu
+            .separator()
+            .item(item("Open in Editor", ExternalKind::Editor))
+            .item(item("Show in File Manager", ExternalKind::FileManager));
+        if !untracked {
+            menu = menu.item(item("Open in External Diff Tool", ExternalKind::DiffTool));
+        }
+    }
     let text = t
         .paths
         .iter()

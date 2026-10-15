@@ -23,6 +23,8 @@ mod custom_commands;
 mod custom_commands_view;
 mod diff_model;
 mod diff_view;
+mod external;
+mod external_view;
 mod file_list;
 mod file_view;
 mod graph_paint;
@@ -153,6 +155,7 @@ fn main() -> Result<()> {
             cx.set_global(state.assistant.clone());
             cx.set_global(state.custom_commands.clone());
             cx.set_global(state.accounts.clone());
+            cx.set_global(state.external_tools.clone());
             cx.set_global(accounts::Avatars::new(paths.data.join("avatars")));
             cx.set_global(image_diff::ImageView::default());
             let theme_key = std::env::var("SWITCHHEAD_THEME")

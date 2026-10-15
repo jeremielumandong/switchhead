@@ -101,6 +101,20 @@ fn os<S: AsRef<OsStr>>(s: S) -> OsString {
     s.as_ref().to_owned()
 }
 
+/// What an external diff tool compares.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiffSides {
+    /// The index and the work tree (unstaged changes).
+    WorkTree,
+    /// `HEAD` and the index (staged changes).
+    Staged,
+    /// A commit and its parent (`None`: a root commit).
+    Commit {
+        base: Option<crate::Oid>,
+        rev: crate::Oid,
+    },
+}
+
 impl Repo {
     fn run_git(&self, args: Vec<OsString>) -> Result<Output> {
         self.git()?.run(&args)
@@ -278,10 +292,63 @@ impl Repo {
             .filter(|s| !s.is_empty())
     }
 
-    /// Run the configured merge tool on one conflicted path and wait for it to close
-    /// (`git mergetool --no-prompt`). git stages the file when the tool reports success.
-    pub fn run_merge_tool(&self, path: &Path) -> Result<()> {
-        self.run_paths(vec![os("mergetool"), os("--no-prompt")], &[path])?;
+    /// Run a merge tool on one conflicted path and wait for it to close
+    /// (`git mergetool --no-prompt`): `tool`, else the configured one. git stages the file
+    /// when the tool reports success.
+    pub fn run_merge_tool(&self, tool: Option<&str>, path: &Path) -> Result<()> {
+        let mut args = vec![os("mergetool"), os("--no-prompt")];
+        if let Some(t) = tool {
+            args.push(format!("--tool={t}").into());
+        }
+        self.run_paths(args, &[path])?;
+        Ok(())
+    }
+
+    /// The external diff tool git uses (`diff.tool`, else `merge.tool`), if any.
+    pub fn diff_tool(&self) -> Option<String> {
+        let git = self.git().ok()?;
+        ["diff.tool", "merge.tool"].into_iter().find_map(|key| {
+            git.text(&["config", "--get", key])
+                .ok()
+                .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty())
+        })
+    }
+
+    /// Show `path` in an external diff tool and wait for it to close
+    /// (`git difftool --no-prompt`): `tool`, else the configured one. A tool must be set:
+    /// without one git would try terminal tools such as vimdiff, which hang with no
+    /// terminal.
+    pub fn run_diff_tool(&self, tool: Option<&str>, sides: &DiffSides, path: &Path) -> Result<()> {
+        let mut args = vec![os("difftool"), os("--no-prompt")];
+        match tool {
+            Some(t) => args.push(format!("--tool={t}").into()),
+            None if self.diff_tool().is_none() => {
+                return Err(Error::Unsupported(
+                    "no diff tool is set: choose one in Settings → External Tools".into(),
+                ));
+            }
+            None => {}
+        }
+        match sides {
+            DiffSides::WorkTree => {}
+            DiffSides::Staged => args.push(os("--cached")),
+            DiffSides::Commit { base, rev } => {
+                let base = match base {
+                    Some(b) => b.to_string(),
+                    // A root commit: compare with the empty tree.
+                    None => self
+                        .git()?
+                        .run_with(&["hash-object", "-t", "tree", "--stdin"], Some(b""), &[])?
+                        .text()
+                        .trim()
+                        .to_owned(),
+                };
+                args.push(base.into());
+                args.push(rev.to_string().into());
+            }
+        }
+        self.run_paths(args, &[path])?;
         Ok(())
     }
 
@@ -901,6 +968,54 @@ mod tests {
         assert!(!t.join("f.txt").exists());
         t.git(&["config", "merge.tool", "meld"]);
         assert_eq!(r.merge_tool().as_deref(), Some("meld"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runs_a_diff_tool_on_each_kind_of_change() {
+        let t = TestRepo::new();
+        let r = repo(&t);
+        let root: crate::Oid = t.commit_file("f.txt", "one\n", "first").parse().unwrap();
+        let second: crate::Oid = t.commit_file("f.txt", "two\n", "second").parse().unwrap();
+        // A tool that keeps what it was shown.
+        let out = t.join("shown");
+        t.git(&[
+            "config",
+            "difftool.keep.cmd",
+            &format!("cat \"$LOCAL\" \"$REMOTE\" > '{}'", out.display()),
+        ]);
+        let shown = || std::fs::read_to_string(&out).unwrap();
+        let f = Path::new("f.txt");
+        r.run_diff_tool(
+            Some("keep"),
+            &DiffSides::Commit {
+                base: Some(root),
+                rev: second,
+            },
+            f,
+        )
+        .unwrap();
+        assert_eq!(shown(), "one\ntwo\n");
+        r.run_diff_tool(
+            Some("keep"),
+            &DiffSides::Commit {
+                base: None,
+                rev: root,
+            },
+            f,
+        )
+        .unwrap();
+        assert_eq!(shown(), "one\n");
+        t.write("f.txt", "three\n");
+        t.git(&["add", "f.txt"]);
+        t.write("f.txt", "four\n");
+        r.run_diff_tool(Some("keep"), &DiffSides::Staged, f)
+            .unwrap();
+        assert_eq!(shown(), "two\nthree\n");
+        // The configured tool when none is given.
+        t.git(&["config", "diff.tool", "keep"]);
+        r.run_diff_tool(None, &DiffSides::WorkTree, f).unwrap();
+        assert_eq!(shown(), "three\nfour\n");
     }
 
     #[test]

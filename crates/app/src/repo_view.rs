@@ -11,6 +11,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
+use std::path::PathBuf;
 
 use gpui_kit::AppContext as _;
 use gpui_kit::component::menu::ContextMenuExt as _;
@@ -26,6 +27,7 @@ use switchhead_git::cli::Cancel;
 use switchhead_git::flow::Kind;
 use switchhead_git::graph::{GraphRows, Node, Segment};
 use switchhead_git::log::{self, CommitLog, LogOptions, Scope, WalkStats};
+use switchhead_git::ops::DiffSides;
 use switchhead_git::refs::{self, Label, LabelKind, Refs};
 use switchhead_git::watch::{self, Fingerprint};
 use switchhead_git::{Oid, Repo, RepoState};
@@ -35,7 +37,8 @@ use crate::actions;
 use crate::activity::{Activity, Outcome};
 use crate::appearance::{rpx, ts};
 use crate::changes_view::{ChangesEvent, ChangesView};
-use crate::commit_view::{CommitView, Navigate, OpenFile, RunCustom};
+use crate::commit_view::{CommitExternal, CommitView, Navigate, OpenFile, RunCustom};
+use crate::external::ExternalKind;
 use crate::graph_paint;
 use crate::theme::{MONO, Palette, palette};
 use crate::ui;
@@ -44,6 +47,7 @@ mod activity_panel;
 mod branch_ops;
 mod commit_menu;
 mod custom_ops;
+mod external_ops;
 mod file_history;
 mod flow_ops;
 mod form;
@@ -207,7 +211,7 @@ pub struct RepoView {
     _walk: Option<Task<()>>,
     _watch: Task<()>,
     _events: Task<()>,
-    _details: [Subscription; 3],
+    _details: [Subscription; 4],
     _changes: [Subscription; 2],
     _op: Option<Task<()>>,
 }
@@ -221,6 +225,13 @@ impl RepoView {
         });
         let run_custom = cx.subscribe(&details, |this, _, ev: &RunCustom, cx| {
             this.queue_custom(ev.index, Some(ev.rev), &ev.path, cx)
+        });
+        let open_external = cx.subscribe(&details, |this, _, ev: &CommitExternal, cx| {
+            let sides = DiffSides::Commit {
+                base: ev.base,
+                rev: ev.rev,
+            };
+            this.open_external(ev.kind, ev.path.clone(), Some(sides), cx)
         });
         let sub = cx.subscribe(&details, |this, _, Navigate(id), cx| {
             match this.log.row_of(id) {
@@ -246,6 +257,14 @@ impl RepoView {
                 }
                 ChangesEvent::RunCustom { index, path } => {
                     this.queue_custom(*index, None, path, cx)
+                }
+                ChangesEvent::OpenExternal { kind, path, staged } => {
+                    let sides = if *staged {
+                        DiffSides::Staged
+                    } else {
+                        DiffSides::WorkTree
+                    };
+                    this.open_external(*kind, path.clone(), Some(sides), cx)
                 }
                 ChangesEvent::LfsLock { path, lock: true } => this.lfs_lock(path.clone(), cx),
                 ChangesEvent::LfsLock { path, lock: false } => this.lfs_unlock(path.clone(), cx),
@@ -302,7 +321,7 @@ impl RepoView {
             _watch: Self::watch(cx),
             _events: Self::watch_events(repo_for_events, cx),
             _walk: None,
-            _details: [sub, open_file, run_custom],
+            _details: [sub, open_file, run_custom, open_external],
             _op: None,
         };
         v.reload(cx);
@@ -1362,6 +1381,15 @@ impl Render for RepoView {
             }))
             .on_action(cx.listener(|this, _: &actions::LfsPrune, _, cx| this.lfs_prune(cx)))
             .on_action(cx.listener(|this, _: &actions::ApplyPatch, w, cx| this.pick_patches(w, cx)))
+            .on_action(cx.listener(|this, _: &actions::OpenInTerminal, _, cx| {
+                this.open_external(ExternalKind::Terminal, PathBuf::new(), None, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::OpenInEditor, _, cx| {
+                this.open_external(ExternalKind::Editor, PathBuf::new(), None, cx)
+            }))
+            .on_action(cx.listener(|this, _: &actions::ShowInFileManager, _, cx| {
+                this.open_external(ExternalKind::FileManager, PathBuf::new(), None, cx)
+            }))
             .on_action(
                 cx.listener(|this, _: &actions::SigningSettings, w, cx| {
                     this.signing_settings(w, cx)
