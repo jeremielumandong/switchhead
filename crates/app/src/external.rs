@@ -141,8 +141,7 @@ pub fn default_terminal() -> Option<String> {
 /// it the path is appended when `append` is set.
 fn script(command: &str, path: &Path, append: bool) -> String {
     let quoted = if cfg!(windows) {
-        // Windows paths cannot contain `"`.
-        format!("\"{}\"", path.display())
+        windows_quoted(&path.to_string_lossy())
     } else {
         // The path is the script's `$1`, so nothing in it is interpreted.
         "\"$1\"".to_owned()
@@ -157,6 +156,15 @@ fn script(command: &str, path: &Path, append: bool) -> String {
     }
 }
 
+/// `path` in double quotes for a Windows command line. Windows paths cannot contain `"`,
+/// but a trailing `\` (a drive root, a folder) would escape the closing quote for
+/// programs that split their command line the C runtime's way (`wt -d "C:\"` gets
+/// `C:"`), so trailing backslashes are doubled.
+fn windows_quoted(path: &str) -> String {
+    let trailing = path.len() - path.trim_end_matches('\\').len();
+    format!("\"{path}{}\"", "\\".repeat(trailing))
+}
+
 /// Start `command` on `path` in `cwd` and leave it running. Waits up to `wait` for it to
 /// fail (a missing program, a bad option) and returns what it said; a command still
 /// running after that, or one that exited cleanly, counts as started.
@@ -167,6 +175,9 @@ pub fn launch(
     append: bool,
     wait: Duration,
 ) -> Result<(), String> {
+    // Terminals and shells refuse a verbatim `\\?\` path as their folder.
+    let path = &switchhead_git::paths::simplified(path);
+    let cwd = &switchhead_git::paths::simplified(cwd);
     let script = script(command, path, append);
     #[cfg(unix)]
     let mut cmd = {
@@ -266,6 +277,13 @@ mod tests {
             Duration::from_millis(100),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn quotes_windows_paths() {
+        assert_eq!(windows_quoted(r"C:\a b\c"), r#""C:\a b\c""#);
+        assert_eq!(windows_quoted(r"C:\repo\"), r#""C:\repo\\""#);
+        assert_eq!(windows_quoted(r"D:\"), r#""D:\\""#);
     }
 
     #[test]

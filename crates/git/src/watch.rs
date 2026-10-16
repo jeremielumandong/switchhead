@@ -33,7 +33,8 @@ const DEBOUNCE: Duration = Duration::from_millis(150);
 const MAX_DELAY: Duration = Duration::from_secs(1);
 
 /// The folders a [`Watcher`] tells apart, as given and canonicalized (FSEvents reports
-/// canonical paths, e.g. `/private/var/...` for `/var/...`).
+/// canonical paths, e.g. `/private/var/...` for `/var/...`; Windows expands short
+/// `RUNNER~1` names).
 #[derive(Debug)]
 struct Dirs {
     git: Vec<PathBuf>,
@@ -44,10 +45,15 @@ impl Dirs {
     fn new(git: &[&Path], work_tree: Option<&Path>) -> Self {
         let both = |p: &Path| {
             let mut v = vec![p.to_path_buf()];
-            if let Ok(c) = p.canonicalize()
-                && c != p
+            // Both canonical forms: the repository root is the plain one (no `\\?\`),
+            // and events report paths under whichever folder was watched.
+            for c in [p.canonicalize(), crate::paths::canonicalize(p)]
+                .into_iter()
+                .flatten()
             {
-                v.push(c);
+                if !v.contains(&c) {
+                    v.push(c);
+                }
             }
             v
         };

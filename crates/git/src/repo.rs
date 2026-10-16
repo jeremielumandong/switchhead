@@ -110,7 +110,7 @@ impl Repo {
             .workdir()
             .map(Path::to_path_buf)
             .unwrap_or_else(|| git_dir.clone());
-        let root = root.canonicalize().unwrap_or(root);
+        let root = crate::paths::canonicalize(&root).unwrap_or(root);
         let name = root
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -226,7 +226,7 @@ mod tests {
         let id = t.commit_file("a.txt", "a\n", "first");
         std::fs::create_dir_all(t.join("sub/dir")).unwrap();
         let r = Repo::open(&t.join("sub/dir")).unwrap();
-        assert_eq!(r.root(), t.path().canonicalize().unwrap());
+        assert_eq!(r.root(), crate::paths::canonicalize(t.path()).unwrap());
         assert!(r.has_worktree());
         assert_eq!(
             r.head().unwrap(),
