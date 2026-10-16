@@ -7342,7 +7342,7 @@ dependencies = [
 
 [[package]]
 name = "switchhead-agents"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -7354,7 +7354,7 @@ dependencies = [
 
 [[package]]
 name = "switchhead-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -7374,7 +7374,7 @@ dependencies = [
 
 [[package]]
 name = "switchhead-git"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "gix",
  "notify",
@@ -7387,7 +7387,7 @@ dependencies = [
 
 [[package]]
 name = "switchhead-hosting"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "keyring",
  "reqwest",
@@ -7399,7 +7399,7 @@ dependencies = [
 
 [[package]]
 name = "switchhead-mcp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
