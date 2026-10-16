@@ -93,6 +93,8 @@ enum Msg {
     Tracking(Box<Refs>),
     /// Whether the repository uses LFS.
     Lfs(bool),
+    /// The operation in progress (merge, rebase...), read before the refs.
+    State(RepoState),
 }
 
 /// Something the workspace acts on.
@@ -329,7 +331,6 @@ impl RepoView {
             _op: None,
         };
         v.reload(cx);
-        crate::probe::start(cx);
         v
     }
 
@@ -575,7 +576,6 @@ impl RepoView {
         self.pending_select = self.selected.map(|i| self.log.id(i));
         self.loading = true;
         self.error = None;
-        self.state = self.repo.state();
         self.changes.update(cx, |c, cx| c.refresh(cx));
         let (tx, mut rx) = unbounded_channel();
         let repo = self.repo.clone();
@@ -593,12 +593,14 @@ impl RepoView {
         }
         let mut fresh = true;
         self._walk = Some(cx.spawn(async move |this, cx| {
+            let mut done = false;
             while let Some(msg) = rx.recv().await {
                 // Take whatever else is already waiting, then redraw once.
                 let mut msgs = vec![msg];
                 while let Ok(m) = rx.try_recv() {
                     msgs.push(m);
                 }
+                done |= msgs.iter().any(|m| matches!(m, Msg::Done(_)));
                 let ok = this.update(cx, |v, cx| {
                     for m in msgs {
                         v.apply(m, &mut fresh, cx);
@@ -606,14 +608,30 @@ impl RepoView {
                     cx.notify();
                 });
                 if ok.is_err() {
-                    break;
+                    return;
                 }
+            }
+            // The walk thread ended without a result (it panicked): stop loading, or
+            // changes made outside the app are never picked up again.
+            if !done {
+                let _ = this.update(cx, |v, cx| {
+                    tracing::error!(repo = v.repo.name(), "the log walk stopped unexpectedly");
+                    v.loading = false;
+                    v.error = Some("Loading the history stopped unexpectedly".into());
+                    cx.notify();
+                });
             }
         }));
     }
 
     fn apply(&mut self, msg: Msg, fresh: &mut bool, cx: &mut Context<Self>) {
         match msg {
+            Msg::State(state) => {
+                if self.state != state {
+                    self.state = state;
+                    cx.notify();
+                }
+            }
             Msg::Lfs(used) => self.set_lfs_used(used, cx),
             Msg::Refs(refs) | Msg::Tracking(refs) => {
                 // A fresh tab starts on HEAD, like Fork.
@@ -871,9 +889,21 @@ impl RepoView {
                     cx.notify();
                 });
                 if ok.is_err() || end {
-                    break;
+                    return;
                 }
             }
+            // The thread ended without a result (it panicked). Without this the op
+            // stays Running and every later operation is refused.
+            let _ = this.update(cx, |v, cx| {
+                tracing::error!(repo = v.repo.name(), op = %label, "operation stopped unexpectedly");
+                let msg = format!("{label} stopped unexpectedly");
+                v.activity.finish(entry, Outcome::Failed, &msg);
+                v.op = Some(OpStatus::Failed(msg.into()));
+                v.op_cancel = None;
+                v.op_then = None;
+                v.reload(cx);
+                cx.notify();
+            });
         }));
     }
 
@@ -893,21 +923,6 @@ impl RepoView {
         }
         self.run_op(label, done, f, cx);
         self.op_then = Some(Box::new(then));
-    }
-
-    /// TEMPORARY probe hook: nothing running or loading.
-    pub(crate) fn probe_idle(&self) -> bool {
-        !self.busy() && !self.loading
-    }
-
-    /// TEMPORARY probe hook: delete branch `name` like the Delete dialog does.
-    pub(crate) fn probe_delete(&mut self, name: String, cx: &mut Context<Self>) {
-        self.run_op(
-            "Deleting branch",
-            "Branch deleted",
-            move |r, _, _| r.delete_branch(&name, false),
-            cx,
-        );
     }
 
     /// Stop the running operation (git is killed; the repository is left as git leaves it).
@@ -1230,6 +1245,9 @@ impl RepoView {
 
 /// The walk thread: refs, then batches, then upstream counts.
 fn walk_thread(repo: Repo, opts: LogOptions, cancel: Cancel, tx: UnboundedSender<Msg>) {
+    if tx.send(Msg::State(repo.state())).is_err() {
+        return;
+    }
     let mut refs = match refs::load(&repo) {
         Ok(r) => r,
         Err(e) => {
