@@ -278,6 +278,12 @@ one-line note. Milestones M3–M6 together are Fork feature parity.
       through `.git/lfs/objects` (a note says how to fetch a missing side); palette Fetch /
       Fetch All / Pull / Prune; LFS Locks sidebar (Unlock, Force Unlock by lock id) and
       Lock / Unlock in Local Changes. Locks section hides when the server has none.
+      Clone of an LFS repository (2026-10-22): `ops::clone` checks out with
+      `GIT_LFS_SKIP_SMUDGE=1`, then (when a tracked `.gitattributes` uses LFS) runs
+      `git lfs install --local` if git-lfs was never initialized, and `git lfs pull`; a
+      failed download keeps the clone (it used to end "checkout failed" with no work
+      tree) and the status bar says why. LFS fetch / pull now show progress
+      (`GIT_LFS_FORCE_PROGRESS`, read from stdout).
 - [x] M6-2 Submodules: add, update (init/recursive), open as tab, show changes.
       Landed: `git::submodules` (add / update args, `submodule_diff` lists the commits
       added and removed via a `log` in the submodule's clone); status keeps each

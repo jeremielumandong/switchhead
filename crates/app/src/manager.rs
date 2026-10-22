@@ -225,7 +225,9 @@ impl Workspace {
         form.progress = "Starting…".into();
         let cancel = Cancel::default();
         form.cancel = cancel.clone();
-        let (tx, mut rx) = unbounded_channel::<Result<String, Result<PathBuf, String>>>();
+        // Progress lines, then the result: the clone's root and an LFS warning, or an error.
+        type Done = Result<(PathBuf, Option<String>), String>;
+        let (tx, mut rx) = unbounded_channel::<Result<String, Done>>();
         let spawned = std::thread::Builder::new()
             .name("git-clone".into())
             .spawn(move || {
@@ -234,7 +236,7 @@ impl Workspace {
                     let _ = progress.send(Ok(l.to_owned()));
                 });
                 let _ = tx.send(Err(res
-                    .map(|r| r.root().to_path_buf())
+                    .map(|c| (c.repo.root().to_path_buf(), c.lfs.warning()))
                     .map_err(|e| e.to_string())));
             });
         if let Err(e) = spawned {
@@ -255,9 +257,10 @@ impl Workspace {
                                 }
                             }
                         }
-                        Err(Ok(root)) => {
+                        Err(Ok((root, lfs_warning))) => {
                             ws.manager.clone = None;
                             ws.open_path(root, true, cx);
+                            ws.notice = lfs_warning.map(Into::into);
                         }
                         Err(Err(e)) => {
                             if let Some(f) = &mut ws.manager.clone {
