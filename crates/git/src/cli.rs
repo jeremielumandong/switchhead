@@ -195,9 +195,25 @@ impl Git {
         &self,
         args: &[S],
         cancel: &Cancel,
+        on_line: impl FnMut(&str),
+    ) -> Result<Output> {
+        self.run_streaming_with(args, &[], false, cancel, on_line)
+    }
+
+    /// [`Git::run_streaming`] with extra environment; `stdout_lines` also sends stdout's
+    /// lines to `on_line` (git-lfs writes its progress there).
+    pub fn run_streaming_with<S: AsRef<OsStr>>(
+        &self,
+        args: &[S],
+        env: &[(&str, &OsStr)],
+        stdout_lines: bool,
+        cancel: &Cancel,
         mut on_line: impl FnMut(&str),
     ) -> Result<Output> {
         let mut cmd = self.command(args);
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
         // Its own process group, so cancelling also stops what git started (the per-remote
         // fetches of `fetch --all`, ssh, transport helpers).
@@ -207,17 +223,35 @@ impl Git {
             std::io::ErrorKind::NotFound => Error::GitMissing,
             _ => Error::Io(e),
         })?;
-        let mut stdout = child.stdout.take();
+        // stderr is read on its own thread so a silent git (a stalled connection) can
+        // still be cancelled: this loop wakes every 50 ms to check.
+        // Chunks are tagged `true` when they come from stdout.
+        let (tx, rx) = std::sync::mpsc::channel::<(bool, Vec<u8>)>();
+        let stdout = child.stdout.take();
+        let out_tx = stdout_lines.then(|| tx.clone());
         let out_thread = std::thread::spawn(move || {
             let mut buf = Vec::new();
-            if let Some(s) = stdout.as_mut() {
-                let _ = s.read_to_end(&mut buf);
+            match (stdout, out_tx) {
+                (Some(s), Some(tx)) => {
+                    let mut r = BufReader::new(s);
+                    loop {
+                        let mut chunk = Vec::new();
+                        match read_until_any(&mut r, &mut chunk) {
+                            Ok(0) | Err(_) => break,
+                            Ok(_) => {
+                                buf.extend_from_slice(&chunk);
+                                let _ = tx.send((true, chunk));
+                            }
+                        }
+                    }
+                }
+                (Some(mut s), None) => {
+                    let _ = s.read_to_end(&mut buf);
+                }
+                (None, _) => {}
             }
             buf
         });
-        // stderr is read on its own thread so a silent git (a stalled connection) can
-        // still be cancelled: this loop wakes every 50 ms to check.
-        let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
         let stderr = child.stderr.take();
         let err_thread = std::thread::spawn(move || {
             let Some(stderr) = stderr else { return };
@@ -228,7 +262,7 @@ impl Git {
                 match read_until_any(&mut r, &mut chunk) {
                     Ok(0) | Err(_) => break,
                     Ok(_) => {
-                        if tx.send(chunk).is_err() {
+                        if tx.send((false, chunk)).is_err() {
                             break;
                         }
                     }
@@ -252,8 +286,10 @@ impl Git {
                 break;
             }
             match rx.recv_timeout(std::time::Duration::from_millis(50)) {
-                Ok(chunk) => {
-                    stderr_all.extend_from_slice(&chunk);
+                Ok((from_stdout, chunk)) => {
+                    if !from_stdout {
+                        stderr_all.extend_from_slice(&chunk);
+                    }
                     let line = String::from_utf8_lossy(&chunk);
                     let line = line.trim_end_matches(['\r', '\n']);
                     if !line.is_empty() && !killed {

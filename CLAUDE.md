@@ -244,6 +244,11 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
   locks found; ambiguous" when the server's answer has more than one; the app unlocks by
   `--id`. `git lfs fetch` only fetches the current branch's objects, so older diff sides
   stay pointers until `fetch --all`.
+- git-lfs prints progress only to a terminal unless `GIT_LFS_FORCE_PROGRESS=1`, and then
+  on stdout, not stderr (`run_streaming_with(.., stdout_lines: true, ..)`). A clone whose
+  LFS download fails exits 128 "Clone succeeded, but checkout failed" with no work tree,
+  so `ops::clone` skips the smudge and pulls afterwards. git-lfs reads and writes
+  `file://` remotes itself (tests use one); a plain path remote is not uploaded to.
 - `git submodule add` / `update` clone with `GIT_PROTOCOL_FROM_USER=0`, so a local path or
   `file://` URL fails ("transport 'file' not allowed") unless `protocol.file.allow=always`;
   tests pass `-c protocol.file.allow=always`, and a manual check can launch the app with

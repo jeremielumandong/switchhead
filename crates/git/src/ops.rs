@@ -761,7 +761,15 @@ impl Repo {
     pub fn lfs(&self, args: &[&str], cancel: &Cancel, on_line: impl FnMut(&str)) -> Result<()> {
         let mut all = vec!["lfs"];
         all.extend_from_slice(args);
-        self.streaming(&all, cancel, on_line)
+        // git-lfs only reports progress to a terminal unless asked, and writes it to stdout.
+        self.git()?.run_streaming_with(
+            &all,
+            &[crate::lfs::force_progress()],
+            true,
+            cancel,
+            on_line,
+        )?;
+        Ok(())
     }
 
     /// Write patches for `range` (`a..b`, or one commit with `-1 <id>`) into `dir`.
@@ -832,25 +840,46 @@ impl Repo {
     }
 }
 
-/// Clone `url` into `dest`, streaming progress.
-pub fn clone(url: &str, dest: &Path, cancel: &Cancel, on_line: impl FnMut(&str)) -> Result<Repo> {
+/// A finished clone.
+pub struct Cloned {
+    /// The new repository.
+    pub repo: Repo,
+    /// What happened to its LFS files.
+    pub lfs: crate::lfs::CloneSetup,
+}
+
+/// Clone `url` into `dest`, streaming progress. LFS files are not downloaded during the
+/// checkout: a failed download (no credentials, a missing object) would leave a clone with
+/// no work tree. When the repository uses LFS, its objects are pulled afterwards (setting
+/// up LFS for the clone if git-lfs was never initialized), and a failure there keeps the
+/// clone ([`Cloned::lfs`] says what happened).
+pub fn clone(
+    url: &str,
+    dest: &Path,
+    cancel: &Cancel,
+    mut on_line: impl FnMut(&str),
+) -> Result<Cloned> {
     let parent = dest
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     std::fs::create_dir_all(parent)?;
     let git = crate::cli::Git::new(parent)?;
-    git.run_streaming(
+    git.run_streaming_with(
         &[
             os("clone"),
             os("--progress"),
             os(url),
             dest.as_os_str().to_owned(),
         ],
+        &[crate::lfs::skip_smudge()],
+        false,
         cancel,
-        on_line,
+        &mut on_line,
     )?;
-    Repo::open(dest)
+    let repo = Repo::open(dest)?;
+    let lfs = repo.lfs_setup_clone(cancel, on_line);
+    Ok(Cloned { repo, lfs })
 }
 
 /// Create a repository at `path` (with an initial branch name, when given).
@@ -1132,7 +1161,8 @@ mod tests {
             &cancel,
             sink,
         )
-        .unwrap();
+        .unwrap()
+        .repo;
         // Identity for commits in the clone.
         r.git()
             .unwrap()
@@ -1170,7 +1200,8 @@ mod tests {
             &cancel,
             sink,
         )
-        .unwrap();
+        .unwrap()
+        .repo;
         assert!(r2.root().join("b.txt").exists());
 
         r.create_branch("topic", "HEAD", false).unwrap();
