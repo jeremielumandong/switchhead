@@ -73,18 +73,18 @@ h2 { font-size: clamp(36px, 5.2vw, 60px); line-height: 1.02; }
 .hero h1 { font-size: clamp(52px, 9vw, 112px); line-height: .95; letter-spacing: -0.055em; }
 .lede { font-size: 18px; color: var(--fg2); max-width: 720px; margin: 32px 0 36px; }
 .lede em { color: var(--fg); font-style: normal; }
-.release { max-width: 640px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--bd); border-radius: 12px; padding: 14px 18px; }
-.release-os { font-size: 12px; color: var(--fg); border: 1px solid var(--bd2); border-radius: 999px; padding: 3px 10px; }
-.release p { margin: 0; color: var(--fg2); font-size: 14.5px; }
-.install { max-width: 640px; background: var(--panel); border: 1px solid var(--bd); border-radius: 12px; overflow: hidden; }
+.install { max-width: 720px; background: var(--panel); border: 1px solid var(--bd); border-radius: 12px; overflow: hidden; }
 .install-tabs { display: flex; border-bottom: 1px solid var(--bd); padding: 0 6px; }
 .install-tabs button { background: none; border: 0; padding: 10px 12px; font-size: 13px; color: var(--fg3); border-bottom: 2px solid transparent; margin-bottom: -1px; }
 .install-tabs button.on { color: var(--fg); border-bottom-color: var(--acc); }
-.install-body { display: flex; gap: 10px; align-items: flex-start; padding: 14px 14px 6px 16px; }
-.install-body pre { margin: 0; flex: 1; font-size: 13px; white-space: pre-wrap; word-break: break-all; color: var(--fg); line-height: 1.7; }
+.install-body { display: flex; gap: 14px; align-items: center; padding: 14px 14px 8px 16px; }
+.install-body pre { margin: 0; flex: 1; min-width: 0; font-size: 13px; white-space: pre; overflow-x: auto; color: var(--fg); line-height: 1.7; }
 .install-body pre .p { color: var(--yellow); user-select: none; }
-.btn-copy { background: var(--elev); border: 1px solid var(--bd2); border-radius: 7px; padding: 4px 10px; font-size: 12px; }
+.btn-copy { flex: none; background: var(--elev); border: 1px solid var(--bd2); border-radius: 7px; padding: 4px 10px; font-size: 12px; }
 .btn-copy:hover { border-color: var(--fg3); }
+.btn-dl { flex: none; background: var(--fg); color: var(--bg); font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: 7px; text-decoration: none; }
+.btn-dl:hover { opacity: .9; }
+.btn-dl[hidden], .btn-copy[hidden] { display: none; }
 .install-note { margin: 0; padding: 4px 16px 14px; font-size: 13px; color: var(--fg3); }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; margin: 56px 0 0; background: var(--bd); border: 1px solid var(--bd); border-radius: 14px; overflow: hidden; }
 .stats div { background: var(--bg); padding: 22px 22px 20px; }

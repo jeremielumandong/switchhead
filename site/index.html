@@ -28,6 +28,7 @@
     </a>
     <span class="chip mono">v0.1.0</span>
     <nav class="nav-links" aria-label="Sections">
+      <a href="#install">Install</a>
       <a href="#demo">Demo</a>
       <a href="#tour">Tour</a>
       <a href="#speed">Speed</a>
@@ -51,9 +52,18 @@
   <h1>Every branch,<br>drawn before<br>you blink.</h1>
   <p class="lede">A very fast, native Git client. switchhead reads history in process with gitoxide, streams the commit graph while it is still being read, and runs every change through <em>your own</em> <code>git</code>, so hooks, credential helpers, SSH agents, signing and LFS behave exactly like the command line.</p>
 
-  <div class="release">
-    <span class="release-os mono">Linux · macOS · Windows</span>
-    <p>Installers arrive with the first release.</p>
+  <div class="install" id="install">
+    <div class="install-tabs" role="tablist">
+      <button role="tab" type="button" data-os="linux" class="on">Linux x86_64</button>
+      <button role="tab" type="button" data-os="mac">macOS</button>
+      <button role="tab" type="button" data-os="win">Windows x64</button>
+    </div>
+    <div class="install-body">
+      <pre class="mono" id="installCmd"></pre>
+      <button class="btn-copy" id="copyInstall" type="button">Copy</button>
+      <a class="btn-dl" id="installDownload" href="#" hidden>Download</a>
+    </div>
+    <p class="install-note" id="installNote"></p>
   </div>
 
   <dl class="stats">
