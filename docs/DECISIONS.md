@@ -206,3 +206,14 @@ check can be turned off in Settings.
 A panic writes a plain-text report (version, platform, thread, message, location,
 backtrace) to `<data>/crashes/`, keeping the newest ten, and the next start offers to show
 the newest one once. Reports are never uploaded; the user can attach one to an issue.
+
+## 2026-10-23 — Automatic version bumps (user request)
+
+`scripts/bump-version.py major|minor|patch|X.Y.Z` (Switchyard's script) sets
+`[workspace.package] version` and the workspace crates' `Cargo.lock` entries, then checks the
+lockfile with `cargo metadata --locked`. The "Bump version" workflow runs it after every push
+to main (patch) and by hand (minor, major or an exact version), on a `bump/vX.Y.Z` branch
+with a PR rather than a push to main: commits pushed with `GITHUB_TOKEN` trigger no
+workflows, and the release workflows require a push-event CI run on main for the exact
+commit, which merging the PR provides. A push that already changed the version, or one made
+while a bump PR is open, starts no new bump, so merging a bump PR does not start another.
