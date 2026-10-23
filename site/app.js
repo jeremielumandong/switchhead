@@ -376,6 +376,34 @@
   }
   $$('#keyOs button').forEach((b) => b.addEventListener('click', () => buildKeys(b.dataset.os)));
 
+  // ---------------------------------------------------------------- install
+  const RELEASES = 'https://github.com/jeremielumandong/switchhead/releases/latest/download';
+  const INSTALL = {
+    linux: { cmd: 'curl -fsSL https://raw.githubusercontent.com/jeremielumandong/switchhead/main/install.sh | sh', note: 'Downloads the latest release, verifies its SHA-256 checksum and installs a desktop launcher and the switchhead command. No Rust or sudo needed; switchhead uses the git on your PATH.' },
+    mac: { cmd: 'switchhead-macos-universal.dmg', href: `${RELEASES}/switchhead-macos-universal.dmg`, button: 'Download .dmg', note: 'Universal app for Apple Silicon and Intel, macOS 11 or later. Open the disk image and drag switchhead to Applications.' },
+    win: { cmd: 'switchhead-windows-x64-setup.exe', href: `${RELEASES}/switchhead-windows-x64-setup.exe`, button: 'Download .exe', note: 'Windows 10 or later. Installs for your user only, no administrator rights needed. Needs Git for Windows.' },
+  };
+  // Open the tab for the visitor's platform; Linux when it can't tell.
+  const ua = navigator.userAgent;
+  let installOs = /Mac OS X|Macintosh/.test(ua) && !/iPhone|iPad/.test(ua) ? 'mac' : /Windows/.test(ua) ? 'win' : 'linux';
+  function showInstall(os) {
+    installOs = os;
+    const inst = INSTALL[os];
+    $('#installCmd').innerHTML = `<span class="p">$ </span>${esc(inst.cmd)}`;
+    $('#installNote').textContent = inst.note;
+    $('#copyInstall').hidden = !!inst.href;
+    $('#copyInstall').textContent = 'Copy';
+    const dl = $('#installDownload');
+    dl.hidden = !inst.href;
+    if (inst.href) { dl.href = inst.href; dl.textContent = inst.button; }
+    $$('#install .install-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.os === os));
+  }
+  $$('#install .install-tabs button').forEach((b) => b.addEventListener('click', () => showInstall(b.dataset.os)));
+  $('#copyInstall').addEventListener('click', async (e) => {
+    try { await navigator.clipboard.writeText(INSTALL[installOs].cmd); e.target.textContent = 'Copied'; } catch (err) { e.target.textContent = 'Select ↑'; }
+    setTimeout(() => { e.target.textContent = 'Copy'; }, 1600);
+  });
+
   // ---------------------------------------------------------------- assistant demo
   const AI_SCRIPT = [
     ['tool', 'switchhead.status'], ['tool', 'switchhead.diff --staged'], ['tool', 'switchhead.log -n 20'],
@@ -448,4 +476,5 @@
   buildTour();
   buildFeatures();
   buildKeys(/Mac/.test(navigator.platform) ? 'mac' : 'pc');
+  showInstall(installOs);
 })();

@@ -220,11 +220,55 @@ Ctrl on Linux and Windows, Cmd on macOS.
 ## Install
 
 Each release on [switchhead's website](https://jeremielumandong.github.io/switchhead/)
-comes as an AppImage for Linux (x86_64; make it executable and run it), a universal disk image for
-macOS 11 or newer (drag switchhead to Applications), and an installer for Windows 10 or
-newer that needs no administrator rights. switchhead uses the `git` on your `PATH`, so
-install git first. Until the first release is out, [build from source](#building-from-source)
-or build a package yourself ([Packages](#packages)).
+comes as an AppImage for Linux (x86_64), a universal disk image for macOS 11 or newer
+([`switchhead-macos-universal.dmg`](https://github.com/jeremielumandong/switchhead/releases/latest/download/switchhead-macos-universal.dmg):
+drag switchhead to Applications), and an installer for Windows 10 or newer that needs no
+administrator rights ([`switchhead-windows-x64-setup.exe`](https://github.com/jeremielumandong/switchhead/releases/latest/download/switchhead-windows-x64-setup.exe)).
+switchhead uses the `git` on your `PATH`, so install git first.
+
+### Linux
+
+Install the latest published Linux x86_64 release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/jeremielumandong/switchhead/main/install.sh | sh
+```
+
+The installer ([`install.sh`](install.sh)) downloads the AppImage from this repository's
+GitHub Releases, checks its SHA-256 checksum, and installs it for your user:
+
+| What | Where |
+| --- | --- |
+| The app | `~/Applications/switchhead.AppImage` |
+| Launcher command | `~/.local/bin/switchhead` |
+| Desktop entry and icon | `~/.local/share/applications/switchhead.desktop`, `~/.local/share/icons/hicolor` |
+
+No Rust compiler or sudo is needed, but the AppImage uses the system's graphics stack:
+a working GPU driver with the Vulkan loader, plus `libxkbcommon`, `libxkbcommon-x11`,
+`libwayland-client`, `libxcb`, `fontconfig` and `freetype`. Most desktops already have
+them. On Ubuntu or Debian, install any that are missing with
+`sudo apt install libvulkan1 libxkbcommon0 libxkbcommon-x11-0 libwayland-client0 libxcb1 libfontconfig1 libfreetype6`.
+The release is built on Ubuntu 22.04, so it needs glibc 2.35 or newer. Make sure
+`~/.local/bin` is on your `PATH` so the `switchhead` command resolves; the
+installer warns if it is not.
+
+- **Update:** quit switchhead and run the same command again. The previous version is kept
+  as `switchhead.AppImage.bak`. The installer won't replace an AppImage that is running
+  unless you add `--stop-running`: `curl -fsSL …/install.sh | sh -s -- --stop-running`.
+- **Pick a release:** `curl -fsSL …/install.sh | SWITCHHEAD_VERSION=v0.1.2 sh`.
+- **Install somewhere else:** set `SWITCHHEAD_APPIMAGE=/absolute/path/switchhead.AppImage`.
+- **Uninstall:** `curl -fsSL …/install.sh | sh -s -- --uninstall`, or
+  `./install.sh --uninstall` from a checkout. Your repository list and settings in
+  `~/.local/share/switchhead` are kept (delete that folder yourself to remove them).
+
+To build and install from a source checkout instead (needs Rust and the build packages
+under [Building from source](#building-from-source)):
+
+```sh
+./install.sh --build                         # build the AppImage, then install it
+./install.sh dist/switchhead-<version>-x86_64.AppImage   # install an AppImage you already have
+./install.sh --uninstall
+```
 
 ## Building from source
 
