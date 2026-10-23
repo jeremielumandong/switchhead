@@ -5,7 +5,7 @@ exclude = ["vendor/gpui-base", "vendor/gpui-fast"]
 default-members = ["crates/git", "crates/hosting", "crates/agents", "crates/mcp", "crates/app"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/jeremielumandong/switchhead"
