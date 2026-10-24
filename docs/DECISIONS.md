@@ -217,3 +217,15 @@ with a PR rather than a push to main: commits pushed with `GITHUB_TOKEN` trigger
 workflows, and the release workflows require a push-event CI run on main for the exact
 commit, which merging the PR provides. A push that already changed the version, or one made
 while a bump PR is open, starts no new bump, so merging a bump PR does not start another.
+
+## 2026-10-24 — gpui-fast #84 (Windows frames on demand) as a backport
+
+Jeremie asked to integrate longbridge/gpui-fast PR #84, merged upstream as `124f79b`. It
+only touches `gpui_windows`: the backend stops repainting every window at the display
+refresh rate while idle (upstream measured 96 % less idle CPU). Rather than moving the
+whole stack to `124f79b` (64 upstream commits, including two Zed syncs, under the vendored
+`gpui` / `gpui_linux` and the Kit compat facades, which are re-copied from AgentOpsChat, not
+rebased here), the PR is applied onto the vendored `598306f` `gpui_windows`; it needs no
+core change. Every other GPUI Fast crate stays on `598306f`. Details and how to drop it
+are in `vendor/gpui-fast/PARITY-PATCH.md`.
+switchhead had used `gpui_windows` from git unpatched until then; it is now vendored too.

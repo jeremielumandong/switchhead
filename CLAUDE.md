@@ -255,10 +255,12 @@ crates are GPL-3: do not copy or port code from them. gitoxide is MIT OR Apache-
   `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=protocol.file.allow GIT_CONFIG_VALUE_0=always`.
 - GPUI Kit 0.7.3 runs on the application-patched GPUI Fast stack vendored in `vendor/`
   (a copy of AgentOpsChat's): `compat/*` facades publish GPUI Fast's core under the
-  `gpui-pre` 0.3.9 names Kit pins, `gpui` and `gpui_linux` are patched locally, and the
-  other GPUI Fast crates stay on git rev `598306f`. Do not enable gpui-kit's own `gpui-fast`
-  feature (that pulls the unpatched published runtime) and update `vendor/` from
-  AgentOpsChat rather than editing it here.
+  `gpui-pre` 0.3.9 names Kit pins, `gpui`, `gpui_linux` and `gpui_windows` are patched
+  locally, and the other GPUI Fast crates stay on git rev `598306f`. Do not enable gpui-kit's
+  own `gpui-fast` feature (that pulls the unpatched published runtime) and update `vendor/`
+  from AgentOpsChat rather than editing it here. The one exception is the backport of
+  gpui-fast #84 in `gpui_windows` (end of `vendor/gpui-fast/PARITY-PATCH.md`): carry it over
+  until AgentOpsChat's copy includes it.
 - SSH signatures: `%G?` is `N` (as for an unsigned commit) when `gpg.ssh.allowedSignersFile`
   is not set, with the reason only on stderr, and `U` when the key is not listed in it;
   `signing::verify_commit` tells signed from unsigned in process (the `gpgsig` header).
